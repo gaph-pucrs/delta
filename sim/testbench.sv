@@ -18,7 +18,7 @@
  * Testbench for RS5 simulation.
  */
 
-`include "../RS5/rtl/RS5_pkg.sv"
+`include "../rtl/RS5_pkg.sv"
 `include "../CacheControllers/rtl/DMPkg.sv"
 
 //////////////////////////////////////////////////////////////////////////////
@@ -62,7 +62,7 @@ module testbench
 
     localparam int           BUS_WIDTH       = 32;
     localparam int           MEM_ADDR_BITS   = 28;
-    localparam string        BIN_FILE        = "../RS5/app/coremark/coremark.bin";
+    localparam string        BIN_FILE        = "../app/coremark/coremark.bin";
 
     localparam int           FLIT_SIZE       = 32;
     localparam int           BLOCK_SIZE      = 16;
@@ -100,55 +100,39 @@ module testbench
 // TB SIGNALS
 //////////////////////////////////////////////////////////////////////////////
 
-    /* RTC is 64 bits but the bus is 32 bits */
-    /* verilator lint_off UNUSEDSIGNAL */
-    logic [63:0]            data_rtc;
-    /* verilator lint_on UNUSEDSIGNAL */
-
-    logic                   interrupt_ack;
-    logic [63:0]            mtime;
-    logic                   enable_rtc, enable_plic, enable_tb;
+    logic                   enable_tb;
     logic                   mem_operation_enable;
     logic [31:0]            mem_address;
     logic [BUS_WIDTH  -1:0] mem_data_write;
     logic [BUS_WIDTH/8-1:0] mem_write_enable;
     byte                    char;
-    logic [31:0]            data_plic;
     logic [BUS_WIDTH  -1:0] data_tb;
-    logic                   enable_tb_r, enable_rtc_r, enable_plic_r;
-    logic                   mti, mei;
+    logic                   enable_tb_r;
 
     logic                   periph_sel;
     logic [BUS_WIDTH  -1:0] periph_data;
 
+    /* Bits depending on connected peripherals */
+    /* verilator lint_off UNUSED */
+    logic [i_cnt:1] iack_periph;
+    /* verilator lint_on UNUSED */
+
 //////////////////////////////////////////////////////////////////////////////
-// Control 
+// Control
 //////////////////////////////////////////////////////////////////////////////
 
-    assign enable_rtc  = mem_operation_enable && (mem_address[31:28] == 4'b0010);
-    assign enable_plic = mem_operation_enable && (mem_address[31:28] == 4'b0100);
     assign enable_tb   = mem_operation_enable && (mem_address[31:28] == 4'b1000);
 
     always_ff @(posedge clk) begin
         enable_tb_r     <= enable_tb;
-        enable_rtc_r    <= enable_rtc;
-        enable_plic_r   <= enable_plic;
     end
 
-    // GAMBIARRA FEITA POR IA - SUBSTITUI A VARIAVEL "mem_data_read"
-    assign periph_sel = enable_tb_r || enable_plic_r || enable_rtc_r;
-
-    always_comb begin
-        unique case ({enable_tb_r, enable_plic_r, enable_rtc_r})
-            3'b100:  periph_data = data_tb;
-            3'b010:  periph_data = {{(BUS_WIDTH-32){1'b0}}, data_plic};
-            3'b001:  periph_data = {{(BUS_WIDTH-32){1'b0}}, data_rtc[31:0]};
-            default: periph_data = '0;
-        endcase
-    end
+    
+    assign periph_sel  = enable_tb_r;
+    assign periph_data = data_tb;
 
 //////////////////////////////////////////////////////////////////////////////
-// PE (RS5 + ICACHE CTRL + DCACHE CTRL + CNI)
+// PE (RS5 + ICACHE CTRL + DCACHE CTRL + CNI + RTC + PLIC)
 //////////////////////////////////////////////////////////////////////////////
 
     // PE -> MNI
@@ -162,13 +146,13 @@ module testbench
     logic [31:0]             cni_data_i;
     logic                    cni_cr_o;
 
-    // CACHE MEMORIE - INSTRUCTION
+    // CACHE MEMORIES
     logic                    icache_ce;
     logic [3:0]              icache_we;
     logic [ICACHE_WIDTH-1:0] icache_addr;
     logic [31:0]             icache_dataW;
     logic [31:0]             icache_dataR;
-    // CACHE MEMORIE - DATA
+
     logic                    dcache_ce;
     logic [3:0]              dcache_we;
     logic [DCACHE_WIDTH-1:0] dcache_addr;
@@ -207,18 +191,17 @@ module testbench
         .DWRITE_MODE     (DWRITE_MODE    ),
 
         .FLIT_SIZE       (FLIT_SIZE      ),
-        .BLOCK_SIZE      (BLOCK_SIZE     )
+        .BLOCK_SIZE      (BLOCK_SIZE     ),
+        .i_cnt           (i_cnt          )
     ) pe (
         .clk             (clk                 ),
         .reset_n         (reset_n             ),
 
-        // INTERRUPT VARIABLES
-        .tip_i           (mti                 ),
-        .eip_i           (mei                 ),
-        .interrupt_ack_o (interrupt_ack       ),
-        .mtime_i         (mtime               ),
+        // INTERRUPCOES DOS PERIFERICOS DA TB
+        .irq_i           ('0                  ),
+        .iack_o          (iack_periph         ),
 
-        // GAMBIARRA FEITA POR IA
+        // CORE DATA BUS - PERIPHERALS
         .bus_en_o        (mem_operation_enable),
         .bus_addr_o      (mem_address         ),
         .bus_we_o        (mem_write_enable    ),
@@ -259,7 +242,7 @@ module testbench
 
     RAM_mem #(
         .MEM_WIDTH(1 << ICACHE_WIDTH),
-        .BIN_FILE("/dev/null") // empty SRAM; RS5 RAM_mem aborts on unopenable files
+        .BIN_FILE("")
     ) icache_sram (
         .clk    (clk),
         .enA_i  (icache_ce),
@@ -278,7 +261,7 @@ module testbench
 
     RAM_mem #(
         .MEM_WIDTH(1 << DCACHE_WIDTH),
-        .BIN_FILE("/dev/null") // empty SRAM; RS5 RAM_mem aborts on unopenable files
+        .BIN_FILE("")
     ) dcache_sram (
         .clk    (clk),
         .enA_i  (dcache_ce),
@@ -379,47 +362,6 @@ module testbench
     assign addrA          = mni_mem_addr[($clog2(MEM_WIDTH) - 1):0];
     assign dataAi         = mni_mem_data_o;
     assign mni_mem_data_i = dataAo;
-
-//////////////////////////////////////////////////////////////////////////////
-// PLIC
-//////////////////////////////////////////////////////////////////////////////
-
-    /* Bits depending on connected peripherals */
-    /* verilator lint_off UNUSED */
-    logic [i_cnt:1] iack_periph;
-    /* verilator lint_on UNUSED */
-
-    plic #(
-        .i_cnt(i_cnt)
-    ) plic1 (
-        .clk     (clk),
-        .reset_n (reset_n),
-        .en_i    (enable_plic),
-        .we_i    (mem_write_enable[3:0]),
-        .addr_i  (mem_address[23:0]),
-        .data_i  (mem_data_write[31:0]),
-        .data_o  (data_plic),
-        .irq_i   ('0),
-        .iack_i  (interrupt_ack),
-        .iack_o  (iack_periph),
-        .irq_o   (mei)
-    );
-
-//////////////////////////////////////////////////////////////////////////////
-// RTC
-//////////////////////////////////////////////////////////////////////////////
-
-    rtc rtc(
-        .clk        (clk),
-        .reset_n    (reset_n),
-        .en_i       (enable_rtc),
-        .addr_i     (mem_address[3:0]),
-        .we_i       ({4'h0, mem_write_enable[3:0]}),
-        .data_i     ({32'h0, mem_data_write[31:0]}),
-        .data_o     (data_rtc),
-        .mti_o      (mti),
-        .mtime_o    (mtime)
-    );
 
 //////////////////////////////////////////////////////////////////////////////
 // Memory Mapped regs

@@ -13,13 +13,14 @@
 module CNI #(
     parameter int unsigned ADDR_WIDTH  = 20,
     parameter int unsigned FLIT_SIZE   = 32,
-    parameter int unsigned FLIT_NUMBER = 20,         //numero para alocar no vector de flits, isso deixara de existir na versão final
+    parameter int unsigned FLIT_NUMBER = 20,         // numero para alocar no vector de flits (debug da read response)
     parameter int unsigned BLOCK_WORDS = 16,
 
-    // TAMANHO DO PAYLOAD DE CADA REQUISICAO: NUMERO DE FLITS ENVIADOS DEPOIS DO HEADER
-    // E O VALOR QUE VAI NO CAMPO hservice DO HEADER E O QUE DEFINE O EOP (NOVO)
-    parameter int unsigned READ_PAYLOAD  = 1,        // ADDR NOTA: QUERO REQUISITAR 16 INSTRUÇÕES LOGO MEU SIZE AQUI É 16
-    parameter int unsigned WRITE_PAYLOAD = 3         // ADDR + WE + DADO
+    parameter int unsigned READ_REQUEST_NUMBER  = 16,   // A LINHA INTEIRA DA CACHE
+    parameter int unsigned WRITE_REQUEST_NUMBER = 16,   // A LINHA INTEIRA DA CACHE
+
+    parameter int unsigned READ_PAYLOAD  = 1,                 // ADDR
+    parameter int unsigned WRITE_PAYLOAD = BLOCK_WORDS + 2    // ADDR + WE + BLOCK_WORDS DADOS
 )
 (
     input  logic                         clk,
@@ -59,10 +60,18 @@ module CNI #(
     // PARAMETER, VARIABLES AND DEFINITIONS
     //--------------------------------------------------------------------------
 
-    localparam int unsigned CNT_WIDTH = (FLIT_NUMBER > 1) ? $clog2(FLIT_NUMBER) : 1;    // CONTADOR BASEADO NO NUMERO DE FLITS
+ 
+    localparam int unsigned MAX_PAYLOAD = (WRITE_PAYLOAD > READ_PAYLOAD) ? WRITE_PAYLOAD : READ_PAYLOAD;
+    localparam int unsigned CNT_WIDTH   = $clog2(MAX_PAYLOAD + 1);                      
+    localparam int unsigned IDX_WIDTH   = (FLIT_NUMBER > 1) ? $clog2(FLIT_NUMBER) : 1;  // INDICE DO VETOR DE FLITS
+
+    // OS 3 PRIMEIROS FLITS DO WRITE SAO HEADER, ADDR E WE: O DADO "k" VAI NO FLIT k+3
+    localparam int unsigned WR_DATA_BASE = 3;
 
     logic [(CNT_WIDTH - 1):0]      flit_cnt;                                            // ME INDICA QUAL FLIT IRÁ SER TRANSMITIDO
-    logic [(CNT_WIDTH - 1):0]   payload_len;                                            // ULTIMO INDICE DE FLIT DO PACOTE ATUAL - DEFINE O EOP (NOVO)
+    logic [(CNT_WIDTH - 1):0]   payload_len;                                            // ULTIMO INDICE DE FLIT DO PACOTE ATUAL - DEFINE O EOP 
+    logic                      wr_word_v;                                              
+    logic                   wr_data_sent;                                               
     /* verilator lint_off UNUSEDSIGNAL */
     logic [(FLIT_SIZE - 1):0]         flits [(FLIT_NUMBER - 1):0];                      // ME ALOCA UM NUMERO X DE FLITS COM O TAMANHO DE 32 BITS
     /* verilator lint_on UNUSEDSIGNAL */
@@ -78,7 +87,6 @@ module CNI #(
     // REGISTER VARIABLES - NOVO
     logic [ADDR_WIDTH-1:0]           addr_r;
     logic [3:0]                        wr_r;
-    logic [31:0]                    data_ir;
 
     //--------------------------------------------------------------------------
     // RINGBUFFER MODULE INSTANCIATION - TRANSMISSION TO CACHE
@@ -116,7 +124,7 @@ module CNI #(
     // HEADER PACKAGE SPECIFICATION
     //--------------------------------------------------------------------------
 
-    // POSSIVEIS REQUISIÇÕES A SEREM TRANSMITIDAS/RECEBIDAS NO CAMPO DE FLAG DE CADA FLIT 0
+    // POSSIVEIS REQUISIÇÕES A SEREM TRANSMITIDAS/RECEBIDAS NO CAMPO DE FLAG DO HEADER
     typedef enum logic [7:0] {
         READ_REQUEST               = 8'b00000001,
         READ_RESPONSE              = 8'b00000010,
@@ -154,10 +162,10 @@ module CNI #(
             CNI_IDLE:
                 if (cache_ce_i && cache_we_i == '0)
                     next_state = CNI_SEND_READ_REQUEST;
-                else if (cache_ce_i && cache_we_i != '0)            // NOVO
+                else if (cache_ce_i && cache_we_i != '0)            
                     next_state = CNI_SEND_WRITE_REQUEST;
-            CNI_SEND_WRITE_REQUEST:                                 // NOVO
-                if(cni_cr_i && cni_eop_o)                
+            CNI_SEND_WRITE_REQUEST:                                 
+                if(cni_cr_i && cni_eop_o)
                     next_state = CNI_IDLE;
             CNI_SEND_READ_REQUEST:
                 if (cni_cr_i && cni_eop_o)              // se tenho credito para enviar  o ultimo pacote, troco de estado
@@ -178,13 +186,23 @@ module CNI #(
     //-------------------------------------------------------------------------- 
 
     assign hflag    = (state == CNI_SEND_WRITE_REQUEST) ? WRITE_REQUEST : (state == CNI_SEND_READ_REQUEST) ? READ_REQUEST : '0;
-    assign hservice = 8'(payload_len);                                        // SIZE: TAMANHO DO PAYLOAD - **HEADER NÃO CONTA**
+    assign hservice = (state == CNI_SEND_READ_REQUEST)  ? 8'(READ_REQUEST_NUMBER)
+                    : (state == CNI_SEND_WRITE_REQUEST) ? 8'(WRITE_REQUEST_NUMBER)
+                    :                                     '0;
     assign hx       = 8'b0;     
     assign hy       = 8'b0;
     assign header = {hflag,hservice,hx,hy};
 
-    // SE WRITE, PERMANEÇO BUSY ATÉ VOLTAR PARA IDLE, SE READ ESPERO O ULTIMO PACOTE DO BUFFER
-    assign mem_busy_o = (cache_we_i != '0) ? (state != CNI_IDLE) : !rx_rb;
+    // PALAVRA DO EVICT DISPONIVEL NO BARRAMENTO: O CONTROLADOR DE CACHE ESTA COM ce E we ATIVOS.
+    // ENQUANTO EU NAO ABAIXAR O mem_busy_o ELE SEGURA A MESMA PALAVRA
+    assign wr_word_v    = cache_ce_i && (cache_we_i != '0);
+
+    assign wr_data_sent = (state == CNI_SEND_WRITE_REQUEST) && cni_cr_i
+                       && (flit_cnt >= CNT_WIDTH'(WR_DATA_BASE)) && wr_word_v;
+
+    // SE WRITE, SO ABAIXO O BUSY NO CICLO EM QUE MANDO A PALAVRA
+    // SE READ, ESPERO O ULTIMO PACOTE DO BUFFER
+    assign mem_busy_o = (cache_we_i != '0) ? !wr_data_sent : !rx_rb;
 
     //--------------------------------------------------------------------------
     // REQUESTS STATES LOGIC
@@ -198,8 +216,8 @@ module CNI #(
         end
         // NÃO FAZ NADA, UTILIZADO APENAS PARA DEBUGAR SE ESTÁ RECEBENDO TODAS AS INSTRUÇÕES
         else if (state == CNI_RECEIVE_READ_RESPONSE && cni_cr_i) begin
-            flits[flit_cnt] <= cni_data_i;   
-        end            
+            flits[flit_cnt[(IDX_WIDTH - 1):0]] <= cni_data_i;
+        end
     end
 
 
@@ -207,13 +225,11 @@ module CNI #(
         if (!rst_n) begin
             addr_r  <= '0;
             wr_r    <= '0;
-            data_ir <= '0;
-        end   
+        end
         else if (state == CNI_IDLE && next_state inside{CNI_SEND_READ_REQUEST,CNI_SEND_WRITE_REQUEST}) begin
-            addr_r  <= cache_addr_i;     
+            addr_r  <= cache_addr_i;
             wr_r    <=   cache_we_i;
-            data_ir <= cache_data_i;
-        end  
+        end
     end
 
     // CONTADOR DE FLITS, CASO CREDITO = 0, SEGURA O PACOTE ATÉ QUE O MESMO SUBA (NAO TESTADO)
@@ -227,18 +243,21 @@ module CNI #(
     end
 
 
-    assign cni_tx_o = ( cni_cr_i && state inside {CNI_SEND_READ_REQUEST,CNI_SEND_WRITE_REQUEST});
+    assign cni_tx_o = cni_cr_i
+                   && ( (state == CNI_SEND_READ_REQUEST)
+                     || (state == CNI_SEND_WRITE_REQUEST
+                         && ((flit_cnt < CNT_WIDTH'(WR_DATA_BASE)) || wr_word_v)) );
 
-    // EOP VINCULADO AGORA AO TAMANHO ESPECIFICADO DO PAYLOAD: SE READ, MEU PAYLOAD É 1 (ADDR) SE WRITE 3(ADDR,WRE E DADO)
-    // SE O MEU CONTADOR FOR IGUAL AO TAMANHO DO PAYLOAD E ESTOU TRANSMITINDO ELE SOBE EOP      (NOVO)
+    // EOP VINCULADO AO TAMANHO DO PAYLOAD: READ = 1 (ADDR), WRITE = BLOCK_WORDS + 2 (ADDR, WE E OS DADOS)
+    // SE O MEU CONTADOR FOR IGUAL AO TAMANHO DO PAYLOAD E ESTOU TRANSMITINDO ELE SOBE EOP      
     assign payload_len = (state == CNI_SEND_WRITE_REQUEST) ? CNT_WIDTH'(WRITE_PAYLOAD) : CNT_WIDTH'(READ_PAYLOAD);
     assign cni_eop_o   = (cni_tx_o && flit_cnt == payload_len);
 
-    // 
+
     assign cni_data_o = (flit_cnt == CNT_WIDTH'(0)) ? header
                       : (flit_cnt == CNT_WIDTH'(1)) ? {{(32 - ADDR_WIDTH){1'b0}}, addr_r}
                       : (flit_cnt == CNT_WIDTH'(2)) ? {28'b0, wr_r}
-                      :                               data_ir;
+                      :                               cache_data_i;
 
     //--------------------------------------------------------------------------
     // READ RESPONSE STATE LOGIC

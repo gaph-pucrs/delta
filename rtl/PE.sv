@@ -1,10 +1,10 @@
 //------------------------------------------------------------------------------
-// IVAN PALADIN JUNIOR - 23/SEP/2026
+// IVAN PALADIN JUNIOR - 21/SEP/2026
 //------------------------------------------------------------------------------
 // -> PE (PROCESSING ELEMENT): groups the RS5 core, the instruction and data
-// cache controllers (DMCtrl) and the CNI.
+// cache controllers (DMCtrl),CNI and the peripherals PLIC and RTC.
 // -> Outside the PE (testbench): the cache SRAMs (icache_* / dcache_* ports),
-// (PLIC, RTC, TB regs) and the interrupt/timer signals.
+// the NoC link (CNI <-> MNI)
 // * GAPH - Hardware Design Support Group
 // * PUCRS - Pontifical Catholic University of Rio Grande do Sul
 //------------------------------------------------------------------------------
@@ -56,22 +56,25 @@ module PE
     // CNI
     //--------------------------------------------------------------------------
     parameter int           FLIT_SIZE        = 32,
-    parameter int           BLOCK_SIZE       = 16
+    parameter int           BLOCK_SIZE       = 16,
+
+    //--------------------------------------------------------------------------
+    // PLIC
+    //--------------------------------------------------------------------------
+    parameter int           i_cnt            = 1     
 )
 (
     input  logic                    clk,
     input  logic                    reset_n,
 
     //--------------------------------------------------------------------------
-    // INTERRUPTS AND TIMER
+    // INTERRUPTION VARIABLES SIGNALS
     //--------------------------------------------------------------------------
-    input  logic                    tip_i,
-    input  logic                    eip_i,
-    output logic                    interrupt_ack_o,
-    input  logic [63:0]             mtime_i,
+    input  logic [i_cnt:1]          irq_i,
+    output logic [i_cnt:1]          iack_o,
 
     //--------------------------------------------------------------------------
-    // GAMBIARRA DA IA
+    // CORE DATA BUS 
     //--------------------------------------------------------------------------
     output logic                    bus_en_o,
     output logic [31:0]             bus_addr_o,
@@ -81,7 +84,7 @@ module PE
     input  logic [BUS_WIDTH-1:0]    periph_data_i,    
 
     //--------------------------------------------------------------------------
-    // CACHE MEMORY -> INSTRUCTION
+    // INSTRUCTION CACHE MEMORY 
     //--------------------------------------------------------------------------
     output logic                    icache_ce_o,
     output logic [3:0]              icache_we_o,
@@ -90,7 +93,7 @@ module PE
     output logic [31:0]             icache_data_o,
 
     //--------------------------------------------------------------------------
-    // CACHE MEMORY -> DATA
+    // DATA CACHE MEMORY 
     //--------------------------------------------------------------------------
     output logic                    dcache_ce_o,
     output logic [3:0]              dcache_we_o,
@@ -129,6 +132,8 @@ module PE
     logic                   stall;
     logic                   enable_imem;
     logic                   enable_ram;
+    logic                   enable_rtc, enable_plic;
+    logic                   enable_rtc_r, enable_plic_r;
     logic                   mem_operation_enable;
     logic [31:0]            mem_address;
     logic [BUS_WIDTH  -1:0] mem_data_read, mem_data_write;
@@ -136,13 +141,37 @@ module PE
     logic [BUS_WIDTH  -1:0] data_ram;
     logic [31:0]            dmem_dataR;
 
+    /* RTC is 64 bits but the bus is 32 bits */
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [63:0]            data_rtc;
+    /* verilator lint_on UNUSEDSIGNAL */
+    logic [31:0]            data_plic;
+    logic [63:0]            mtime;
+    logic                   mti, mei;
+    logic                   interrupt_ack;
+
 //////////////////////////////////////////////////////////////////////////////
-// CONTROL (GAMBIARRA DA IA PARTE 2)
+// CONTROL
 //////////////////////////////////////////////////////////////////////////////
 
     assign enable_ram    = mem_operation_enable && ((mem_address[31:28] == 4'b0000) || (mem_address[31:28] == 4'b0001));
+    assign enable_rtc    = mem_operation_enable &&  (mem_address[31:28] == 4'b0010);
+    assign enable_plic   = mem_operation_enable &&  (mem_address[31:28] == 4'b0100);
 
-    assign mem_data_read = periph_sel_i ? periph_data_i : dmem_dataR;
+    always_ff @(posedge clk) begin
+        enable_rtc_r  <= enable_rtc;
+        enable_plic_r <= enable_plic;
+    end
+
+
+    always_comb begin
+        unique case ({periph_sel_i, enable_plic_r, enable_rtc_r})
+            3'b100:  mem_data_read = periph_data_i;
+            3'b010:  mem_data_read = {{(BUS_WIDTH-32){1'b0}}, data_plic};
+            3'b001:  mem_data_read = {{(BUS_WIDTH-32){1'b0}}, data_rtc[31:0]};
+            default: mem_data_read = dmem_dataR;
+        endcase
+    end
 
     assign bus_en_o      = mem_operation_enable;
     assign bus_addr_o    = mem_address;
@@ -183,20 +212,56 @@ module PE
         .busy_i                 (busy                ),
         .instruction_i          (instruction[31:0]   ),
         .mem_data_i             (mem_data_read       ),
-        .mtime_i                (mtime_i             ),
-        .tip_i                  (tip_i               ),
-        .eip_i                  (eip_i               ),
+        .mtime_i                (mtime               ),
+        .tip_i                  (mti                 ),
+        .eip_i                  (mei                 ),
         .imem_operation_enable_o(enable_imem         ),
         .instruction_address_o  (instruction_address ),
         .dmem_operation_enable_o(mem_operation_enable),
         .mem_write_enable_o     (mem_write_enable    ),
         .mem_address_o          (mem_address         ),
         .mem_data_o             (mem_data_write      ),
-        .interrupt_ack_o        (interrupt_ack_o     )
+        .interrupt_ack_o        (interrupt_ack       )
     );
 
 //////////////////////////////////////////////////////////////////////////////
-// CACHE CONTROLLER - INSTRUCTION
+// PLIC
+//////////////////////////////////////////////////////////////////////////////
+
+    plic #(
+        .i_cnt(i_cnt)
+    ) plic1 (
+        .clk     (clk),
+        .reset_n (reset_n),
+        .en_i    (enable_plic),
+        .we_i    (mem_write_enable[3:0]),
+        .addr_i  (mem_address[23:0]),
+        .data_i  (mem_data_write[31:0]),
+        .data_o  (data_plic),
+        .irq_i   (irq_i),
+        .iack_i  (interrupt_ack),
+        .iack_o  (iack_o),
+        .irq_o   (mei)
+    );
+
+//////////////////////////////////////////////////////////////////////////////
+// RTC
+//////////////////////////////////////////////////////////////////////////////
+
+    rtc rtc(
+        .clk        (clk),
+        .reset_n    (reset_n),
+        .en_i       (enable_rtc),
+        .addr_i     (mem_address[3:0]),
+        .we_i       ({4'h0, mem_write_enable[3:0]}),
+        .data_i     ({32'h0, mem_data_write[31:0]}),
+        .data_o     (data_rtc),
+        .mti_o      (mti),
+        .mtime_o    (mtime)
+    );
+
+//////////////////////////////////////////////////////////////////////////////
+// CACHE
 //////////////////////////////////////////////////////////////////////////////
 
     logic                     imem_busy;
@@ -243,10 +308,6 @@ module PE
         /* verilator lint_on PINCONNECTEMPTY */
     );
 
-//////////////////////////////////////////////////////////////////////////////
-// CACHE CONTROLLER - DATA
-//////////////////////////////////////////////////////////////////////////////
-
     DMCtrl #(
         .ADDR_WIDTH  (MEM_ADDR_BITS),
         .CACHE_WIDTH (DCACHE_WIDTH ),
@@ -275,7 +336,7 @@ module PE
     );
 
 //////////////////////////////////////////////////////////////////////////////
-// CACHE CONTROLLERS/CNI INTERFACE 
+// CACHE CONTROLLERS -> CNI
 //////////////////////////////////////////////////////////////////////////////
 
     logic                     cni_ce;
@@ -285,52 +346,50 @@ module PE
     logic [31:0]              cni_cache_data_o;
     logic                     cni_busy;
 
-//////////////////////////////////////////////////////////////////////////////
-// ARBITER: CCI/CCD ------> CNI 
-//////////////////////////////////////////////////////////////////////////////
+    //--------------------------------------------------------------------------
+    // ARBITRO: SO UM CONTROLADOR DE CACHE POR VEZ USA A CNI
+    //--------------------------------------------------------------------------
+    // SEM ISSO OS DOIS ENXERGAM O MESMO cache_ce_i E O MESMO BUFFER DE RESPOSTA:
 
     logic cni_working;                                 
-    logic data_priority;                           
-    logic data_access_in_cni;                                  
+    logic cni_with_data;                               
+    logic dcache_working;                               
 
+    assign dcache_working = cni_working ? cni_with_data : dmem_ce;
 
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             cni_working    <= 1'b0;
-            data_priority <= 1'b0;
+            cni_with_data <= 1'b0;
         end
         else if (!cni_working) begin
             if (dmem_ce) begin
                 cni_working    <= 1'b1;
-                data_priority <= 1'b1;
+                cni_with_data <= 1'b1;
             end
             else if (imem_ce) begin
                 cni_working    <= 1'b1;
-                data_priority <= 1'b0;
+                cni_with_data <= 1'b0;
             end
         end
-        // LIBERA QUANDO A REQUISICAO TERMINA
-        else if (data_priority ? !dmem_ce : !imem_ce) begin
+        else if (cni_with_data ? (!dmem_ce && dmem_we == '0) : !imem_ce) begin
             cni_working <= 1'b0;
         end
     end
 
-    // PRIORIDADE DE ACESSO A CNI SEMPRE SERÁ DO DADO (CCD)
-    assign data_access_in_cni = cni_working ? data_priority : dmem_ce;
-
-    // "MUX" ENTRE O CC E A CNI: SO O DONO CHEGA ATE A CNI
-    assign cni_ce           = data_access_in_cni ? dmem_ce   : imem_ce;
-    assign cni_we           = data_access_in_cni ? dmem_we   : '0;
-    assign cni_addr         = data_access_in_cni ? dmem_addr : imem_addr;
+    // "MUX" ENTRE O CC E A CNI
+    assign cni_ce           = dcache_working ? dmem_ce   : imem_ce;
+    assign cni_we           = dcache_working ? dmem_we   : '0;
+    assign cni_addr         = dcache_working ? dmem_addr : imem_addr;
     assign cni_cache_data_i = dmem_dataW;
 
     // CNI -> CACHE CONTROLLERS
     assign imem_data        = cni_cache_data_o;
     assign data_ram         = cni_cache_data_o;
 
-    // BUSY LOGIC
-    assign dmem_busy        =  data_access_in_cni ? cni_busy : 1'b1;
-    assign imem_busy        = !data_access_in_cni ? cni_busy : 1'b1;
+    // O CONTROLADOR QUE NAO ESTA UTILIZANDO A CNI FICA BUSY: NAO CONSUMINDO OS DADOS DO OUTRO
+    assign dmem_busy        =  dcache_working ? cni_busy : 1'b1;
+    assign imem_busy        = !dcache_working ? cni_busy : 1'b1;
 
 //////////////////////////////////////////////////////////////////////////////
 // CNI
@@ -339,7 +398,8 @@ module PE
     CNI #(
         .ADDR_WIDTH  (MEM_ADDR_BITS      ),
         .FLIT_SIZE   (FLIT_SIZE          ),
-        .FLIT_NUMBER (BLOCK_SIZE         )
+        .FLIT_NUMBER (BLOCK_SIZE         ),
+        .BLOCK_WORDS (BLOCK_SIZE         )
     ) cni (
         .clk         (clk                ),
         .rst_n       (reset_n            ),

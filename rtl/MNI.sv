@@ -56,7 +56,7 @@ module MNI #(
 
     localparam int unsigned CNT_WIDTH = (BLOCK_WORDS > 1) ? $clog2(BLOCK_WORDS) : 1;
 
-    // TAMANHO DO PAYLOAD DA READ RESPONSE: O BLOCO INTEIRO DA CACHE, UM FLIT POR PALAVRA
+
     localparam int unsigned READ_RESP_PAYLOAD = BLOCK_WORDS;
 
     logic [(FLIT_SIZE - 1):0]      received_flits [(BLOCK_WORDS - 1):0];  // BLOCO LIDO DA MEMORIA
@@ -65,13 +65,13 @@ module MNI #(
     logic [(CNT_WIDTH - 1):0]      data_cnt;                              // QUAL PALAVRA ESTOU ARMAZENANDO
     logic [MEM_LATENCY:0]          mem_rd_v;                              // VARIAVEL DE CONTROLE
 
-    logic [(ADDR_WIDTH - 1):0]     base_addr_r;                          // ENDERECO BASE DO BLOCO DA ESCRITA/LEITURA (NOVO)
-    logic [3:0]                    we_r;                                 // BYTE ENABLES DA ESCRITA
-    logic [31:0]                   data_r;                               // PALAVRA A SER ESCRITA
+    logic [(ADDR_WIDTH - 1):0]     base_addr_r;                          // ENDERECO BASE DO BLOCO DA ESCRITA/LEITURA
+    logic [3:0]                    we_r;                                 // SALVA WRITE ENABLE DO CICLO ANTERIOR PARA NAO PERDE-LO
+    logic [(CNT_WIDTH - 1):0]      wr_cnt;                               // QUAL PALAVRA RECEBIDA DA CNI ESTOU ESCREVENDO EM MEMORIA
 
     logic [31:0]                      header;
-    logic [7:0]                       hflag;                                            // INDICA A REQUISIÇÃO A SER REALIZADA - FUTURAMENTE IRÁ SER DIVIDIDA EM 2
-    logic [7:0]                    hservice;                                            // INDICA A QUANTIDADE DE PALAVRAS - SEMPRE 8
+    logic [7:0]                       hflag;                                            // INDICA A REQUISIÇÃO A SER REALIZADA
+    logic [7:0]                    hservice;                                            // INDICA A QUANTIDADE DE PALAVRAS A SEREM REQUSITADAS
     logic [7:0]                          hx;                                            // COORDENADAS X - A PRINCIPIO EM 0 
     logic [7:0]                          hy;                                            // COORDENADAS Y - A PRINCIPIO EM 0              
 
@@ -130,11 +130,11 @@ module MNI #(
         MNI_READ_MEM              = 4'd2,   // GERA OS BLOCK_WORDS ENDERECOS
         MNI_WAIT_MEM              = 4'd3,   // ESPERA AS ULTIMAS PALAVRAS SAIREM DA RAM
         MNI_SEND_RESPONSE         = 4'd4,   // MANDA PARA A CNI
+
         // ESTADoS DE ESCRITA, RLX VAO VIRAR TUDO UM ESTADO NO FINAL (MELHOR VISUALIZAÇÃO)
-        MNI_WR_ADDR               = 4'd5,   // FLIT DE ENDERECO DA ESCRITA
-        MNI_WR_WE                 = 4'd6,   // FLIT DE BYTE ENABLES
-        MNI_WR_DATA               = 4'd7,   // FLIT DE DADO
-        MNI_WRITE_MEM             = 4'd8    // ESCREVE NA RAM - SEM WRITE RESPONSE
+        MNI_WR_ADDR               = 4'd5,   // FLIT DE ENDERECO BASE DA ESCRITA
+        MNI_WR_WE                 = 4'd6,   // FLIT DE WRITE ENABLES
+        MNI_WRITE_MEM             = 4'd8    // ESCREVE OS DADOS RECEBIDOS DO CNI NA RAM
     } mni_state_t;
 
     mni_state_t state, next_state;
@@ -157,7 +157,7 @@ module MNI #(
             MNI_IDLE:
                 if (rx_rb && data_rb[31:24] == READ_REQUEST)
                     next_state = MNI_ADDR_CAPTURE;
-                else if (rx_rb && data_rb[31:24] == WRITE_REQUEST)  // NOVO
+                else if (rx_rb && data_rb[31:24] == WRITE_REQUEST)  
                     next_state = MNI_WR_ADDR;
             MNI_ADDR_CAPTURE:
                 if (rx_rb)                             
@@ -171,18 +171,16 @@ module MNI #(
             MNI_SEND_RESPONSE:
                 if (mni_eop_o)
                     next_state = MNI_IDLE;
-            // ESTADOS DO WRITE REQUEST - NOVO
+            // ESTADOS DO WRITE REQUEST
             MNI_WR_ADDR:
                 if (rx_rb)
                     next_state = MNI_WR_WE;
             MNI_WR_WE:
                 if (rx_rb)
-                    next_state = MNI_WR_DATA;
-            MNI_WR_DATA:
-                if (rx_rb)
                     next_state = MNI_WRITE_MEM;
             MNI_WRITE_MEM:
-                next_state = MNI_IDLE;                  
+                if (rx_rb && wr_cnt == CNT_WIDTH'(BLOCK_WORDS - 1))
+                    next_state = MNI_IDLE;
 
             default:
                 next_state = MNI_IDLE;
@@ -204,34 +202,42 @@ module MNI #(
 
     // "DECODIFICAÇÃO" DO PAYLOAD RECEBIDO DA CNI
     //   READ  : HEADER + ADDR
-    //   WRITE : HEADER + ADDR + WE + DADO
+    //   WRITE : HEADER + ADDR + WE + N DADOS
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             base_addr_r <= '0;
             we_r        <= '0;
-            data_r      <= '0;
         end
-        else if (rx_rb) begin   // NOVO, GAMBIARRA FEITO POR IA 
+        else if (rx_rb) begin
             case (state)
                 MNI_ADDR_CAPTURE: base_addr_r <= data_rb[(ADDR_WIDTH - 1):0];
                 MNI_WR_ADDR:      base_addr_r <= data_rb[(ADDR_WIDTH - 1):0];
                 MNI_WR_WE:        we_r        <= data_rb[3:0];
-                MNI_WR_DATA:      data_r      <= data_rb;
                 default: ;
             endcase
         end
     end
 
+    // QUAL PALAVRA DO BLOCO ESTOU ESCREVENDO
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            wr_cnt <= '0;
+        else if (state == MNI_WRITE_MEM && rx_rb)
+            wr_cnt <= wr_cnt + 1'b1;
+        else if (state == MNI_IDLE)
+            wr_cnt <= '0;
+    end
+
     //--------------------------------------------------------------------------
-    // INTERFACE COM A RAM - READ_MEM OU WRITE_MEM  NOVO
+    // INTERFACE COM A RAM - READ_MEM OU WRITE_MEM
     //--------------------------------------------------------------------------
 
-    assign mni_mem_ce_o   = (state == MNI_READ_MEM) || (state == MNI_WRITE_MEM);
-    assign mni_mem_we_o   = (state == MNI_WRITE_MEM) ? we_r : 4'h0;
-    assign mni_mem_data_o = data_r;
-    assign mni_mem_addr_o = (state == MNI_WRITE_MEM)
-                          ? {{(32 - ADDR_WIDTH){1'b0}}, base_addr_r}
-                          : {{(32 - ADDR_WIDTH){1'b0}}, base_addr_r} + (32'(addr_cnt) << 2);
+    
+    assign mni_mem_ce_o   = (state == MNI_READ_MEM) || (state == MNI_WRITE_MEM && rx_rb);
+    assign mni_mem_we_o   = (state == MNI_WRITE_MEM && rx_rb) ? we_r : 4'h0;
+    assign mni_mem_data_o = data_rb;
+    assign mni_mem_addr_o = {{(32 - ADDR_WIDTH){1'b0}}, base_addr_r}
+                          + (32'((state == MNI_WRITE_MEM) ? 32'(wr_cnt) : 32'(addr_cnt)) << 2);
 
     //--------------------------------------------------------------------------
     // CAPTURA DOS DADOS DA RAM
@@ -268,21 +274,22 @@ module MNI #(
 // RECEPÇÃO DE UM REQUEST VINDO DA CNI
 //--------------------------------------------------------------------------
 
-    assign mni_cr_o   = (tx_rb_ack && state inside {MNI_IDLE,MNI_ADDR_CAPTURE,MNI_WR_ADDR,MNI_WR_WE,MNI_WR_DATA});
-    assign rx_rb_ack  = (rx_rb     && state inside {MNI_IDLE,MNI_ADDR_CAPTURE,MNI_WR_ADDR,MNI_WR_WE,MNI_WR_DATA});
+    
+    assign mni_cr_o   = (tx_rb_ack && state inside {MNI_IDLE,MNI_ADDR_CAPTURE,MNI_WR_ADDR,MNI_WR_WE,MNI_WRITE_MEM});
+    assign rx_rb_ack  = (rx_rb     && state inside {MNI_IDLE,MNI_ADDR_CAPTURE,MNI_WR_ADDR,MNI_WR_WE,MNI_WRITE_MEM});
 
 //--------------------------------------------------------------------------
 // TRANSMISSSAO DA RESPOSTA DO READ REQUEST
 //--------------------------------------------------------------------------
 
-    assign hflag      = (next_state == MNI_SEND_RESPONSE) ? READ_RESPONSE : '0; /// LOGICA DE NEXT STATE IRA SER ALTERADA QUANDO ENTRAR OS ESTADOS DE ESCRITA
-    assign hservice   = 8'(READ_RESP_PAYLOAD);      // NUMERO DE FLITS DEPOIS DO HEADER - **HEADER NÃO CONTA** NOVO
+    assign hflag      = (next_state == MNI_SEND_RESPONSE) ? READ_RESPONSE : '0; 
+    assign hservice   = 8'(READ_RESP_PAYLOAD);      
     assign hx         = 8'b0;
     assign hy         = 8'b0;
     assign header     = {hflag,hservice,hx,hy};
 
     assign mni_tx_o   = (mni_cr_i && state == MNI_SEND_RESPONSE || next_state == MNI_SEND_RESPONSE && mni_cr_i)? 1'b1 : 1'b0;
-    assign mni_eop_o  = (state == MNI_SEND_RESPONSE && mni_cr_i && data_cnt == CNT_WIDTH'(READ_RESP_PAYLOAD - 1));  // NOVO, LOGICA MELHORADA
+    assign mni_eop_o  = (state == MNI_SEND_RESPONSE && mni_cr_i && data_cnt == CNT_WIDTH'(READ_RESP_PAYLOAD - 1)); 
     assign mni_data_o = (state == MNI_WAIT_MEM && next_state == MNI_SEND_RESPONSE)? header : mni_tx_o ? received_flits[data_cnt] : '0 ;
     
 endmodule
