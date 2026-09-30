@@ -33,36 +33,15 @@ module testbench
 
   timeunit 1ns; timeprecision 1ns;
 
+    localparam string        OUTPUT_FILE     = "./results/Output.txt";
+
+
 //////////////////////////////////////////////////////////////////////////////
 // PARAMETERS FOR CORE INSTANTIATION
 //////////////////////////////////////////////////////////////////////////////
-
-    localparam mul_e         MULEXT          = MUL_M;
-    localparam atomic_e      AMOEXT          = AMO_A;
-    localparam bit           COMPRESSED      = 1'b1;
-    localparam bit           USE_XOSVM       = 1'b0;
-    localparam bit           USE_ZKNE        = 1'b1;
-    localparam bit           USE_ZICOND      = 1'b1;
-    localparam bit           USE_ZCB         = 1'b1;
-    localparam bit           USE_HPMCOUNTER  = 1'b1;
-    localparam bit           BRANCHPRED      = 1'b1;
-    localparam bit           FORWARDING      = 1'b1;
-    localparam int           IQUEUE_SIZE     = 2;
-
-    localparam bit           VEnable         = 1'b0;
-    localparam int           VLEN            = 512;
-    localparam int           LLEN            = 32;
-
-`ifndef SYNTH
-    localparam bit           PROFILING       = 1'b1;
-    localparam bit           DEBUG           = 1'b1;
-`endif
-    localparam string        PROFILING_FILE  = "./results/Report.txt";
-    localparam string        OUTPUT_FILE     = "./results/Output.txt";
-
     localparam int           BUS_WIDTH       = 32;
     localparam int           MEM_ADDR_BITS   = 28;
-    localparam string        BIN_FILE        = "../app/coremark/coremark.bin";
+    localparam string        BIN_FILE        = "../RS5/app/riscv-tests/test.bin";
 
     localparam int           FLIT_SIZE       = 32;
     localparam int           BLOCK_SIZE      = 16;
@@ -160,28 +139,7 @@ module testbench
     logic [31:0]             dcache_dataR;
 
     PE #(
-    `ifndef SYNTH
-        .DEBUG           (DEBUG          ),
-        .PROFILING       (PROFILING      ),
-        .PROFILING_FILE  (PROFILING_FILE ),
-    `endif
-        .Environment     (ASIC           ),
-        .MULEXT          (MULEXT         ),
-        .AMOEXT          (AMOEXT         ),
-        .COMPRESSED      (COMPRESSED     ),
         .BUS_WIDTH       (BUS_WIDTH      ),
-        .VEnable         (VEnable        ),
-        .VLEN            (VLEN           ),
-        .LLEN            (LLEN           ),
-        .XOSVMEnable     (USE_XOSVM      ),
-        .ZKNEEnable      (USE_ZKNE       ),
-        .ZICONDEnable    (USE_ZICOND     ),
-        .ZCBEnable       (USE_ZCB        ),
-        .HPMCOUNTEREnable(USE_HPMCOUNTER ),
-        .IQUEUE_SIZE     (IQUEUE_SIZE    ),
-        .BRANCHPRED      (BRANCHPRED     ),
-        .FORWARDING      (FORWARDING     ),
-
         .MEM_ADDR_BITS   (MEM_ADDR_BITS  ),
         .ICACHE_WIDTH    (ICACHE_WIDTH   ),
         .ICACHE_OFF_W    (ICACHE_OFF_W   ),
@@ -242,7 +200,7 @@ module testbench
 
     RAM_mem #(
         .MEM_WIDTH(1 << ICACHE_WIDTH),
-        .BIN_FILE("")
+        .BIN_FILE("/dev/null")
     ) icache_sram (
         .clk    (clk),
         .enA_i  (icache_ce),
@@ -261,7 +219,7 @@ module testbench
 
     RAM_mem #(
         .MEM_WIDTH(1 << DCACHE_WIDTH),
-        .BIN_FILE("")
+        .BIN_FILE("/dev/null")
     ) dcache_sram (
         .clk    (clk),
         .enA_i  (dcache_ce),
@@ -332,10 +290,6 @@ module testbench
     logic [BUS_WIDTH-1:0]             dataAo;
 
     RAM_mem #(
-    `ifndef SYNTH
-        .DEBUG     (DEBUG     ),
-        .DEBUG_PATH("./debug/"),
-    `endif
         .BUS_WIDTH(BUS_WIDTH  ),
         .MEM_WIDTH(MEM_WIDTH  ),
         .BIN_FILE (BIN_FILE   )

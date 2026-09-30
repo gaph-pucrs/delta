@@ -16,31 +16,7 @@ module PE
     import RS5_pkg::*;
     import DMPkg::*;
 #(
-`ifndef SYNTH
-    parameter bit           DEBUG            = 1'b0,
-    parameter bit           PROFILING        = 1'b0,
-    parameter string        PROFILING_FILE   = "./debug/Report.txt",
-`endif
-    //--------------------------------------------------------------------------
-    // CORE
-    //--------------------------------------------------------------------------
-    parameter environment_e Environment      = ASIC,
-    parameter mul_e         MULEXT           = MUL_M,
-    parameter atomic_e      AMOEXT           = AMO_A,
-    parameter bit           COMPRESSED       = 1'b0,
-    parameter bit           VEnable          = 1'b0,
-    parameter int           VLEN             = 256,
-    parameter int           LLEN             = 32,
     parameter int           BUS_WIDTH        = 32,
-    parameter bit           XOSVMEnable      = 1'b0,
-    parameter bit           ZKNEEnable       = 1'b0,
-    parameter bit           ZICONDEnable     = 1'b0,
-    parameter bit           ZCBEnable        = 1'b0,
-    parameter bit           HPMCOUNTEREnable = 1'b0,
-    parameter int           IQUEUE_SIZE      = 2,
-    parameter bit           BRANCHPRED       = 1'b1,
-    parameter bit           FORWARDING       = 1'b1,
-
     //--------------------------------------------------------------------------
     // CACHES
     //--------------------------------------------------------------------------
@@ -183,27 +159,13 @@ module PE
 //////////////////////////////////////////////////////////////////////////////
 
     RS5 #(
-    `ifndef SYNTH
-        .DEBUG           (DEBUG           ),
-        .PROFILING       (PROFILING       ),
-        .PROFILING_FILE  (PROFILING_FILE  ),
-    `endif
-        .Environment     (Environment     ),
-        .MULEXT          (MULEXT          ),
-        .AMOEXT          (AMOEXT          ),
-        .COMPRESSED      (COMPRESSED      ),
-        .BUS_WIDTH       (BUS_WIDTH       ),
-        .VEnable         (VEnable         ),
-        .VLEN            (VLEN            ),
-        .LLEN            (LLEN            ),
-        .XOSVMEnable     (XOSVMEnable     ),
-        .ZKNEEnable      (ZKNEEnable      ),
-        .ZICONDEnable    (ZICONDEnable    ),
-        .ZCBEnable       (ZCBEnable       ),
-        .HPMCOUNTEREnable(HPMCOUNTEREnable),
-        .IQUEUE_SIZE     (IQUEUE_SIZE     ),
-        .BRANCHPRED      (BRANCHPRED      ),
-        .FORWARDING      (FORWARDING      )
+        .COMPRESSED      (1'b1),
+        .ZKNEEnable      (1'b1),
+        .ZBKBEnable      (1'b1),
+        .ZKNHEnable      (1'b1),
+        .ZICONDEnable    (1'b1),
+        .ZCBEnable       (1'b1),
+        .HPMCOUNTEREnable(1'b1)
     ) core (
         .clk                    (clk                 ),
         .reset_n                (reset_n             ),
