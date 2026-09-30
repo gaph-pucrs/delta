@@ -1,0 +1,7 @@
+obj_dir
+debug
+results
+work
+transcript
+*.wlf
+wlft*
