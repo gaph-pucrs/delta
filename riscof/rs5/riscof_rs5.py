@@ -64,6 +64,8 @@ class rs5(pluginTemplate):
             -I{dut_dir}/RS5/RingBuffer/rtl/\
             -I{dut_dir}/RS5/rtl/\
             -I{dut_dir}/RS5/sim/\
+            -I{dut_dir}/sim/\
+            -I{dut_dir}/rtl/\
             -I{dut_dir}/RS5/rtl/aes\
             -I{dut_dir}/CacheControllers/rtl/\
             {dut_dir}/riscof/riscof_tb.sv'
@@ -110,7 +112,6 @@ class rs5(pluginTemplate):
         self.verilatecmd += " -GDUALPORT_MEM=1\\'b" + os.environ["DUALPORT_MEM"]
         self.verilatecmd += " -GIQUEUE_SIZE=" + os.environ["IQUEUE_SIZE"]
         self.verilatecmd += " -GDELAY_CYCLES=" + os.environ["DELAY_CYCLES"]
-        self.verilatecmd += " -GCACHE_EN=1\\'b" + os.environ["CACHE_EN"]
 
         self.compile_cmd = self.compile_cmd+' -mabi='+('lp64 ' if 64 in ispec['supported_xlen'] else 'ilp32 ')
 

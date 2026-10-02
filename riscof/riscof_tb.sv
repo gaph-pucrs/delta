@@ -16,7 +16,7 @@
  */
 
 `include "RS5_pkg.sv"
-`include "../CacheControllers/rtl/DMPkg.sv"
+`include "DMPkg.sv"
 
 //////////////////////////////////////////////////////////////////////////////
 // CPU TESTBENCH
@@ -41,9 +41,7 @@ module riscof_tb
     parameter bit          BRANCHPRED       = 1'b0,
     parameter bit          FORWARDING       = 1'b0,
     parameter bit          DUALPORT_MEM     = 1'b1,
-    parameter int          DELAY_CYCLES     = 0,
-    parameter bit          CACHE_EN         = 1'b0
-    
+    parameter int          DELAY_CYCLES     = 0
 )
 (
 );
@@ -57,17 +55,17 @@ module riscof_tb
     localparam int      MEM_WIDTH = 2_097_152;
     localparam int      i_cnt     = 1;
     localparam bit      USE_XOSVM = 1'b0;
-    localparam bit      VEnable         = 1'b0;
-    localparam int      VLEN            = 512;
-    localparam int      LLEN            = 32;
+    localparam bit      VEnable   = 1'b0;
+    localparam int      VLEN      = 512;
+    localparam int      LLEN      = 32;
     localparam bit      PROFILING = 1'b0;
     localparam bit      DEBUG     = 1'b0;
     localparam mul_e    MULEXT    = MEnable ? MUL_M : MUL_OFF;
     localparam atomic_e AMOEXT    = AEnable ? AMO_A : AMO_OFF;
-    localparam int      BUS_WIDTH       = 32;
-    localparam bit      USE_ZKNE        = 1'b1;
-    localparam bit      USE_ZICOND      = 1'b1;
-    localparam bit      USE_ZCB         = 1'b1;
+    localparam int      BUS_WIDTH = 32;
+    localparam bit      USE_ZKNE  = 1'b1;
+    localparam bit      USE_ZICOND = 1'b1;
+    localparam bit      USE_ZCB    = 1'b1;
     localparam bit      USE_HPMCOUNTER  = 1'b1;
 
     localparam int      FLIT_SIZE       = 32;
@@ -170,27 +168,8 @@ module riscof_tb
     logic [31:0]             dcache_dataR;
 
     PE #(
-    `ifndef SYNTH
-        .DEBUG           (DEBUG          ),
-        .PROFILING       (PROFILING      ),
-    `endif
-        .Environment     (ASIC           ),
-        .MULEXT          (MULEXT         ),
-        .AMOEXT          (AMOEXT         ),
-        .COMPRESSED      (COMPRESSED     ),
-        .BUS_WIDTH       (BUS_WIDTH      ),
-        .VEnable         (VEnable        ),
-        .VLEN            (VLEN           ),
-        .LLEN            (LLEN           ),
-        .XOSVMEnable     (USE_XOSVM      ),
-        .ZKNEEnable      (USE_ZKNE       ),
-        .ZICONDEnable    (USE_ZICOND     ),
-        .ZCBEnable       (USE_ZCB        ),
-        .HPMCOUNTEREnable(USE_HPMCOUNTER ),
-        .IQUEUE_SIZE     (IQUEUE_SIZE    ),
-        .BRANCHPRED      (BRANCHPRED     ),
-        .FORWARDING      (FORWARDING     ),
 
+        .BUS_WIDTH       (BUS_WIDTH      ),
         .MEM_ADDR_BITS   (MEM_ADDR_BITS  ),
         .ICACHE_WIDTH    (CACHE_WIDTH   ),
         .ICACHE_OFF_W    (CACHE_OFF_W   ),
@@ -250,7 +229,7 @@ module riscof_tb
 
     RAM_mem #(
         .MEM_WIDTH(1 << CACHE_WIDTH),
-        .BIN_FILE("")
+        .BIN_FILE("/dev/null")
     ) icache_sram (
         .clk    (clk),
         .enA_i  (icache_ce),
@@ -269,7 +248,7 @@ module riscof_tb
 
     RAM_mem #(
         .MEM_WIDTH(1 << CACHE_WIDTH),
-        .BIN_FILE("")
+        .BIN_FILE("/dev/null")
     ) dcache_sram (
         .clk    (clk),
         .enA_i  (dcache_ce),
@@ -390,7 +369,7 @@ module riscof_tb
     /* Cache-coherent signature read: a word is taken from the cache SRAM when it
      * is currently resident (valid tag), otherwise from main memory. This is the
      * value the core would observe, so it captures still-dirty write-back data. */
- begin : gen_sig_word
+    begin : gen_sig_word
         function automatic logic [31:0] sig_word(input logic [31:0] a);
             logic [MEM_ADDR_BITS-1:0]             ma;
             logic [MEM_ADDR_BITS-CACHE_WIDTH-1:0] tg;
