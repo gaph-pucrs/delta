@@ -34,7 +34,7 @@ class rs5(pluginTemplate):
         self.platform_spec = os.path.abspath(config['pspec'])
 
         # Linker script and model_test.h are reused from RS5's plugin
-        self.envpath = os.path.abspath(self.pluginpath + '/../../RS5/riscof/rs5/env')
+        self.envpath = os.path.abspath(self.pluginpath + '/env')
 
         self.triplet = os.environ["TRIPLET"]
 
