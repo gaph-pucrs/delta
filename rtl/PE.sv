@@ -116,6 +116,7 @@ module PE
     logic [BUS_WIDTH/8-1:0] mem_write_enable;
     logic [BUS_WIDTH  -1:0] data_ram;
     logic [31:0]            dmem_dataR;
+    logic [31:0]            dmem_data_core;
 
     /* RTC is 64 bits but the bus is 32 bits */
     /* verilator lint_off UNUSEDSIGNAL */
@@ -145,7 +146,7 @@ module PE
             3'b100:  mem_data_read = periph_data_i;
             3'b010:  mem_data_read = {{(BUS_WIDTH-32){1'b0}}, data_plic};
             3'b001:  mem_data_read = {{(BUS_WIDTH-32){1'b0}}, data_rtc[31:0]};
-            default: mem_data_read = dmem_dataR;
+            default: mem_data_read = dmem_data_core;
         endcase
     end
 
@@ -296,6 +297,32 @@ module PE
         .mem_we_o    (dmem_we            ),
         .mem_data_o  (dmem_dataW         )
     );
+
+// Keep load data stable while the core is stalled
+logic        ld_accept_r;
+logic        ld_hold_v;
+logic [31:0] ld_hold_d;
+
+always_ff @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+        ld_accept_r <= 1'b0;
+        ld_hold_v   <= 1'b0;
+        ld_hold_d   <= '0;
+    end
+    else begin
+        ld_accept_r <= enable_ram && (mem_write_enable == '0) && !stall;
+        if (ld_accept_r && stall) begin      // data valid now, but core frozen
+            ld_hold_v <= 1'b1;
+            ld_hold_d <= dmem_dataR;
+        end
+        else if (!stall) begin
+            ld_hold_v <= 1'b0;
+        end
+    end
+end
+
+assign dmem_data_core = ld_hold_v ? ld_hold_d : dmem_dataR;
+
 
 //////////////////////////////////////////////////////////////////////////////
 // CACHE CONTROLLERS -> CNI

@@ -30,17 +30,6 @@ module riscof_tb
     parameter logic[31:0]  SIG_END          = 0,
     parameter logic[31:0]  TOHOST_ADDR      = 0,
     parameter string       SIG_PATH         = "",
-    parameter bit          MEnable          = 1'b0,
-    parameter bit          AEnable          = 1'b0,
-    parameter bit          COMPRESSED       = 1'b0,
-    parameter bit          ZICONDEnable     = 1'b0,
-    parameter bit          HPMCOUNTEREnable = 1'b0,
-    parameter bit          ZKNEEnable       = 1'b0,
-    parameter bit          ZCBEnable        = 1'b0,
-    parameter int          IQUEUE_SIZE      = 2,
-    parameter bit          BRANCHPRED       = 1'b0,
-    parameter bit          FORWARDING       = 1'b0,
-    parameter bit          DUALPORT_MEM     = 1'b1,
     parameter int          DELAY_CYCLES     = 0
 )
 (
@@ -54,19 +43,12 @@ module riscof_tb
     localparam string   BIN_FILE  = "test.bin";
     localparam int      MEM_WIDTH = 2_097_152;
     localparam int      i_cnt     = 1;
-    localparam bit      USE_XOSVM = 1'b0;
     localparam bit      VEnable   = 1'b0;
     localparam int      VLEN      = 512;
     localparam int      LLEN      = 32;
     localparam bit      PROFILING = 1'b0;
     localparam bit      DEBUG     = 1'b0;
-    localparam mul_e    MULEXT    = MEnable ? MUL_M : MUL_OFF;
-    localparam atomic_e AMOEXT    = AEnable ? AMO_A : AMO_OFF;
     localparam int      BUS_WIDTH = 32;
-    localparam bit      USE_ZKNE  = 1'b1;
-    localparam bit      USE_ZICOND = 1'b1;
-    localparam bit      USE_ZCB    = 1'b1;
-    localparam bit      USE_HPMCOUNTER  = 1'b1;
 
     localparam int      FLIT_SIZE       = 32;
     localparam int      BLOCK_SIZE      = 16;

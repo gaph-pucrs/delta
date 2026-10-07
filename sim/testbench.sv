@@ -18,7 +18,7 @@
  * Testbench for RS5 simulation.
  */
 
-`include "../rtl/RS5_pkg.sv"
+`include "../RS5/rtl/RS5_pkg.sv"
 `include "../CacheControllers/rtl/DMPkg.sv"
 
 //////////////////////////////////////////////////////////////////////////////

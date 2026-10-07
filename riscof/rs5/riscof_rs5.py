@@ -82,35 +82,40 @@ class rs5(pluginTemplate):
         if "I" not in ispec["ISA"]:
             print("ISA should contain I.")
             raise SystemExit(1)
-        if "M" in ispec["ISA"]:
-            self.verilatecmd += " -GMEnable=1\\'b1"
-        if "A" in ispec["ISA"]:
-            self.verilatecmd += " -GAEnable=1\\'b1"
-        if "C" in ispec["ISA"]:
-            self.verilatecmd += " -GCOMPRESSED=1\\'b1"
+        if "M" not in ispec["ISA"]:
+            print("ISA should contain M.")
+            raise SystemExit(1)
+        if "A" not in ispec["ISA"]:
+            print("ISA should contain A.")
+            raise SystemExit(1)
+        if "C" not in ispec["ISA"]:
+            print("ISA should contain C.")
+            raise SystemExit(1)
         if "U" not in ispec["ISA"]:
             print("ISA should contain U.")
             raise SystemExit(1)
-        if "Zicond" in ispec["ISA"]:
-            self.verilatecmd += " -GZICONDEnable=1\\'b1"
+        if "Zicond" not in ispec["ISA"]:
+            print("ISA should contain Zicond.")
+            raise SystemExit(1)
         if "Zicsr" not in ispec["ISA"]:
             print("ISA should contain Zicsr.")
             raise SystemExit(1)
-        if "Zihpm" in ispec["ISA"]:
-            self.verilatecmd += " -GHPMCOUNTEREnable=1\\'b1"
-        if "Zkne" in ispec["ISA"]:
-            self.verilatecmd += " -GZKNEEnable=1\\'b1"
-        if "Zcb" in ispec["ISA"]:
-            self.verilatecmd += " -GZCBEnable=1\\'b1"
-        if "Zbkb" in ispec["ISA"]:
-            self.verilatecmd += " -GZBKBEnable=1\\'b1"
-        if "Zknh" in ispec["ISA"]:
-            self.verilatecmd += " -GZKNHEnable=1\\'b1"
+        if "Zihpm" not in ispec["ISA"]:
+            print("ISA should contain Zihpm.")
+            raise SystemExit(1)
+        if "Zkne" not in ispec["ISA"]:
+            print("ISA should contain Zkne.")
+            raise SystemExit(1)
+        if "Zcb" not in ispec["ISA"]:
+            print("ISA should contain Zcb.")
+            raise SystemExit(1)
+        if "Zbkb" not in ispec["ISA"]:
+            print("ISA should contain Zbkb.")
+            raise SystemExit(1)
+        if "Zknh" not in ispec["ISA"]:
+            print("ISA should contain Zknh.")
+            raise SystemExit(1)
 
-        self.verilatecmd += " -GBRANCHPRED=1\\'b" + os.environ["BRANCHPRED"]
-        self.verilatecmd += " -GFORWARDING=1\\'b" + os.environ["FORWARDING"]
-        self.verilatecmd += " -GDUALPORT_MEM=1\\'b" + os.environ["DUALPORT_MEM"]
-        self.verilatecmd += " -GIQUEUE_SIZE=" + os.environ["IQUEUE_SIZE"]
         self.verilatecmd += " -GDELAY_CYCLES=" + os.environ["DELAY_CYCLES"]
 
         self.compile_cmd = self.compile_cmd+' -mabi='+('lp64 ' if 64 in ispec['supported_xlen'] else 'ilp32 ')
