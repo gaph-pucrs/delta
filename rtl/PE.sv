@@ -247,7 +247,7 @@ module PE
         .CACHE_WIDTH (ICACHE_WIDTH ),
         .OFFSET_WIDTH(ICACHE_OFF_W ),
         .WMODE       (IWRITE_MODE  ),
-        .DEBUG_FILE  ("DEBUG_DCACHE.txt")
+        .DEBUG_FILE  ("DEBUG_ICACHE.txt")
     ) icache_ctrl (
         .clk         (clk                ),
         .rst_n       (reset_n            ),
