@@ -21,6 +21,12 @@
 `include "../RS5/rtl/RS5_pkg.sv"
 `include "../CacheControllers/rtl/DMPkg.sv"
 
+`define CACHE_DEBUG   // Per-line cache FILL/EVICT/DIRTY logs in ./debug/; comment out to disable
+
+`ifdef CACHE_DEBUG
+`include "../CacheControllers/sim/DMDebug.sv"
+`endif
+
 //////////////////////////////////////////////////////////////////////////////
 // CPU TESTBENCH
 //////////////////////////////////////////////////////////////////////////////
@@ -193,6 +199,18 @@ module testbench
         .data_i          (cni_data_i          ),
         .credit_o        (cni_cr_o            )
     );
+
+`ifdef CACHE_DEBUG
+    // One DMDebug inside every DMCtrl (icache and dcache). The names on the
+    // right side are evaluated in the scope of each bound DMCtrl, not here:
+    // each monitor receives the parameters of its own cache.
+    bind DMCtrl DMDebug #(
+        .ADDR_WIDTH  (ADDR_WIDTH  ),
+        .CACHE_WIDTH (CACHE_WIDTH ),
+        .OFFSET_WIDTH(OFFSET_WIDTH),
+        .WMODE       (WMODE       )
+    ) u_debug ();
+`endif
 
 //////////////////////////////////////////////////////////////////////////////
 // Cache memories

@@ -245,8 +245,7 @@ module PE
         .ADDR_WIDTH  (MEM_ADDR_BITS),
         .CACHE_WIDTH (ICACHE_WIDTH ),
         .OFFSET_WIDTH(ICACHE_OFF_W ),
-        .WMODE       (IWRITE_MODE  ),
-        .DEBUG_FILE  ("DEBUG_ICACHE.txt")
+        .WMODE       (IWRITE_MODE  )
     ) icache_ctrl (
         .clk         (clk                ),
         .rst_n       (reset_n            ),
@@ -275,8 +274,7 @@ module PE
         .ADDR_WIDTH  (MEM_ADDR_BITS),
         .CACHE_WIDTH (DCACHE_WIDTH ),
         .OFFSET_WIDTH(DCACHE_OFF_W ),
-        .WMODE       (DWRITE_MODE  ),
-        .DEBUG_FILE  ("DEBUG_DCACHE.txt")
+        .WMODE       (DWRITE_MODE  )
     ) dcache_ctrl (
         .clk         (clk                ),
         .rst_n       (reset_n            ),
