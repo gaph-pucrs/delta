@@ -19,8 +19,8 @@ module CNI #(
     parameter int unsigned READ_REQUEST_NUMBER  = 16,   // A LINHA INTEIRA DA CACHE
     parameter int unsigned WRITE_REQUEST_NUMBER = 16,   // A LINHA INTEIRA DA CACHE
 
-    parameter int unsigned READ_PAYLOAD  = 1,                 // ADDR
-    parameter int unsigned WRITE_PAYLOAD = BLOCK_WORDS + 2    // ADDR + WE + BLOCK_WORDS DADOS
+    parameter int unsigned READ_PAYLOAD  = 2,                 // ORIGIN COORDENATES + ADDR
+    parameter int unsigned WRITE_PAYLOAD = BLOCK_WORDS + 3    // ORIGIN COORDENATES + ADDR + WE + BLOCK_WORDS DADOS
 )
 (
     input  logic                         clk,
@@ -65,8 +65,8 @@ module CNI #(
     localparam int unsigned CNT_WIDTH   = $clog2(MAX_PAYLOAD + 1);                      
     localparam int unsigned IDX_WIDTH   = (FLIT_NUMBER > 1) ? $clog2(FLIT_NUMBER) : 1;  // INDICE DO VETOR DE FLITS
 
-    // OS 3 PRIMEIROS FLITS DO WRITE SAO HEADER, ADDR E WE: O DADO "k" VAI NO FLIT k+3
-    localparam int unsigned WR_DATA_BASE = 3;
+    // OS 3 PRIMEIROS FLITS DO WRITE SAO HEADER, ORIGIN, ADDR E WE: O DADO "k" VAI NO FLIT k+4
+    localparam int unsigned WR_DATA_BASE = 4;
 
     logic [(CNT_WIDTH - 1):0]      flit_cnt;                                            // ME INDICA QUAL FLIT IRÁ SER TRANSMITIDO
     logic [(CNT_WIDTH - 1):0]   payload_len;                                            // ULTIMO INDICE DE FLIT DO PACOTE ATUAL - DEFINE O EOP 
@@ -79,8 +79,13 @@ module CNI #(
     logic [31:0]                     header;                                           
     logic [7:0]                       hflag;                                            // INDICA A REQUISIÇÃO A SER REALIZADA - FUTURAMENTE IRÁ SER DIVIDIDA EM 2
     logic [7:0]                    hservice;                                            // INDICA A QUANTIDADE DE PALAVRAS
-    logic [7:0]                          hx;                                            // COORDENADAS X - A PRINCIPIO EM 0 
-    logic [7:0]                          hy;                                            // COORDENADAS Y - A PRINCIPIO EM 0                                             
+    logic [7:0]                          hx;                                            // COORDENADAS X DO TARGET
+    logic [7:0]                          hy;                                            // COORDENADAS Y DO TARGET
+
+    logic [31:0]            origin_position;  
+    logic [7:0]                   hx_origin;                                            // COORDENADAS X DA ORIGEM
+    logic [7:0]                   hy_origin;                                            // COORDENADAS Y DA ORIGEM
+
 
     logic                   fill_word_taken;
                                           
@@ -193,6 +198,10 @@ module CNI #(
     assign hy       = 8'b0;
     assign header = {hflag,hservice,hx,hy};
 
+    assign hx_origin = 8'b0;
+    assign hy_origin = 8'b0;
+    assign origin_position = {16'b0,hx_origin,hy_origin};
+
     // PALAVRA DO EVICT DISPONIVEL NO BARRAMENTO: O CONTROLADOR DE CACHE ESTA COM ce E we ATIVOS.
     // ENQUANTO EU NAO ABAIXAR O mem_busy_o ELE SEGURA A MESMA PALAVRA
     assign wr_word_v    = cache_ce_i && (cache_we_i != '0);
@@ -248,15 +257,16 @@ module CNI #(
                      || (state == CNI_SEND_WRITE_REQUEST
                          && ((flit_cnt < CNT_WIDTH'(WR_DATA_BASE)) || wr_word_v)) );
 
-    // EOP VINCULADO AO TAMANHO DO PAYLOAD: READ = 1 (ADDR), WRITE = BLOCK_WORDS + 2 (ADDR, WE E OS DADOS)
+    // EOP VINCULADO AO TAMANHO DO PAYLOAD: READ = 1 (ADDR), WRITE = BLOCK_WORDS + 3 (ORIGIN, ADDR, WE E OS DADOS)
     // SE O MEU CONTADOR FOR IGUAL AO TAMANHO DO PAYLOAD E ESTOU TRANSMITINDO ELE SOBE EOP      
     assign payload_len = (state == CNI_SEND_WRITE_REQUEST) ? CNT_WIDTH'(WRITE_PAYLOAD) : CNT_WIDTH'(READ_PAYLOAD);
     assign cni_eop_o   = (cni_tx_o && flit_cnt == payload_len);
 
 
     assign cni_data_o = (flit_cnt == CNT_WIDTH'(0)) ? header
-                      : (flit_cnt == CNT_WIDTH'(1)) ? {{(32 - ADDR_WIDTH){1'b0}}, addr_r}
-                      : (flit_cnt == CNT_WIDTH'(2)) ? {28'b0, wr_r}
+                      : (flit_cnt == CNT_WIDTH'(1)) ? origin_position
+                      : (flit_cnt == CNT_WIDTH'(2)) ? {{(32 - ADDR_WIDTH){1'b0}}, addr_r}
+                      : (flit_cnt == CNT_WIDTH'(3)) ? {28'b0, wr_r}
                       :                               cache_data_i;
 
     //--------------------------------------------------------------------------

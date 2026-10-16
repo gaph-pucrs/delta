@@ -72,8 +72,7 @@ module MNI #(
     logic [31:0]                      header;
     logic [7:0]                       hflag;                                            // INDICA A REQUISIÇÃO A SER REALIZADA
     logic [7:0]                    hservice;                                            // INDICA A QUANTIDADE DE PALAVRAS A SEREM REQUSITADAS
-    logic [7:0]                          hx;                                            // COORDENADAS X - A PRINCIPIO EM 0 
-    logic [7:0]                          hy;                                            // COORDENADAS Y - A PRINCIPIO EM 0              
+    logic [15:0]                    htarget;          
 
     //--------------------------------------------------------------------------
     // RINGBUFFER MODULE INSTANCIATION - RECEPTION FROM CNI
@@ -127,14 +126,16 @@ module MNI #(
     typedef enum logic [3:0] {
         MNI_IDLE                  = 4'd0,   // ESPERA O HEADER
         MNI_ADDR_CAPTURE          = 4'd1,   // O FLIT DE ENDERECO ESTA NO BARRAMENTO **NESTE** CICLO
-        MNI_READ_MEM              = 4'd2,   // GERA OS BLOCK_WORDS ENDERECOS
-        MNI_WAIT_MEM              = 4'd3,   // ESPERA AS ULTIMAS PALAVRAS SAIREM DA RAM
-        MNI_SEND_RESPONSE         = 4'd4,   // MANDA PARA A CNI
+        MNI_READ_ORIGIN           = 4'd2,   // FLIT DAS COORDENADAS DO PE QUE REQUISITOU
+        MNI_READ_MEM              = 4'd3,   // GERA OS BLOCK_WORDS ENDERECOS
+        MNI_WAIT_MEM              = 4'd4,   // ESPERA AS ULTIMAS PALAVRAS SAIREM DA RAM
+        MNI_SEND_RESPONSE         = 4'd5,   // MANDA PARA A CNI
 
         // ESTADoS DE ESCRITA, RLX VAO VIRAR TUDO UM ESTADO NO FINAL (MELHOR VISUALIZAÇÃO)
-        MNI_WR_ADDR               = 4'd5,   // FLIT DE ENDERECO BASE DA ESCRITA
-        MNI_WR_WE                 = 4'd6,   // FLIT DE WRITE ENABLES
-        MNI_WRITE_MEM             = 4'd8    // ESCREVE OS DADOS RECEBIDOS DO CNI NA RAM
+        MNI_WR_ADDR               = 4'd6,   // FLIT DE ENDERECO BASE DA ESCRITA
+        MNI_WR_ORIGIN             = 4'd7,   // FLIT DAS COORDENADAS DO PE QUE REQUISITOU
+        MNI_WR_WE                 = 4'd8,   // FLIT DE WRITE ENABLES
+        MNI_WRITE_MEM             = 4'd9    // ESCREVE OS DADOS RECEBIDOS DO CNI NA RAM
     } mni_state_t;
 
     mni_state_t state, next_state;
@@ -156,9 +157,12 @@ module MNI #(
         case (state)
             MNI_IDLE:
                 if (rx_rb && data_rb[31:24] == READ_REQUEST)
-                    next_state = MNI_ADDR_CAPTURE;
+                    next_state = MNI_READ_ORIGIN;
                 else if (rx_rb && data_rb[31:24] == WRITE_REQUEST)  
-                    next_state = MNI_WR_ADDR;
+                    next_state = MNI_WR_ORIGIN;
+            MNI_READ_ORIGIN:
+                if (rx_rb)                             
+                    next_state = MNI_ADDR_CAPTURE;
             MNI_ADDR_CAPTURE:
                 if (rx_rb)                             
                     next_state = MNI_READ_MEM;
@@ -172,6 +176,9 @@ module MNI #(
                 if (mni_eop_o)
                     next_state = MNI_IDLE;
             // ESTADOS DO WRITE REQUEST
+            MNI_WR_ORIGIN:
+                if (rx_rb)
+                    next_state = MNI_WR_ADDR;
             MNI_WR_ADDR:
                 if (rx_rb)
                     next_state = MNI_WR_WE;
@@ -201,17 +208,20 @@ module MNI #(
     end
 
     // "DECODIFICAÇÃO" DO PAYLOAD RECEBIDO DA CNI
-    //   READ  : HEADER + ADDR
-    //   WRITE : HEADER + ADDR + WE + N DADOS
+    //   READ  : HEADER + ORIGIN COORDENATES + ADDR
+    //   WRITE : HEADER + ORIGIN COORDENATES + ADDR + WE + N DADOS
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             base_addr_r <= '0;
             we_r        <= '0;
+            htarget     <= '0;
         end
         else if (rx_rb) begin
             case (state)
                 MNI_ADDR_CAPTURE: base_addr_r <= data_rb[(ADDR_WIDTH - 1):0];
+                MNI_READ_ORIGIN:  htarget     <= data_rb[15:0];
                 MNI_WR_ADDR:      base_addr_r <= data_rb[(ADDR_WIDTH - 1):0];
+                MNI_WR_ORIGIN:    htarget     <= data_rb[15:0];
                 MNI_WR_WE:        we_r        <= data_rb[3:0];
                 default: ;
             endcase
@@ -275,8 +285,8 @@ module MNI #(
 //--------------------------------------------------------------------------
 
     
-    assign mni_cr_o   = (tx_rb_ack && state inside {MNI_IDLE,MNI_ADDR_CAPTURE,MNI_WR_ADDR,MNI_WR_WE,MNI_WRITE_MEM});
-    assign rx_rb_ack  = (rx_rb     && state inside {MNI_IDLE,MNI_ADDR_CAPTURE,MNI_WR_ADDR,MNI_WR_WE,MNI_WRITE_MEM});
+    assign mni_cr_o   = (tx_rb_ack && state inside {MNI_IDLE,MNI_ADDR_CAPTURE,MNI_READ_ORIGIN,MNI_WR_ORIGIN,MNI_WR_ADDR,MNI_WR_WE,MNI_WRITE_MEM});
+    assign rx_rb_ack  = (rx_rb     && state inside {MNI_IDLE,MNI_ADDR_CAPTURE,MNI_READ_ORIGIN,MNI_WR_ORIGIN,MNI_WR_ADDR,MNI_WR_WE,MNI_WRITE_MEM});
 
 //--------------------------------------------------------------------------
 // TRANSMISSSAO DA RESPOSTA DO READ REQUEST
@@ -284,9 +294,7 @@ module MNI #(
 
     assign hflag      = (next_state == MNI_SEND_RESPONSE) ? READ_RESPONSE : '0; 
     assign hservice   = 8'(READ_RESP_PAYLOAD);      
-    assign hx         = 8'b0;
-    assign hy         = 8'b0;
-    assign header     = {hflag,hservice,hx,hy};
+    assign header     = {hflag,hservice,htarget};
 
     assign mni_tx_o   = (mni_cr_i && state == MNI_SEND_RESPONSE || next_state == MNI_SEND_RESPONSE && mni_cr_i)? 1'b1 : 1'b0;
     assign mni_eop_o  = (state == MNI_SEND_RESPONSE && mni_cr_i && data_cnt == CNT_WIDTH'(READ_RESP_PAYLOAD - 1)); 
