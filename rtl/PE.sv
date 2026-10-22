@@ -32,50 +32,13 @@ module PE
     // CNI
     //--------------------------------------------------------------------------
     parameter int           FLIT_SIZE        = 32,
-    parameter int           BLOCK_SIZE       = 16,
-
-    //--------------------------------------------------------------------------
-    // PLIC
-    //--------------------------------------------------------------------------
-    parameter int           i_cnt            = 1     
+    parameter int           BLOCK_SIZE       = 16
 )
 (
+    
+
     input  logic                    clk,
     input  logic                    reset_n,
-
-    //--------------------------------------------------------------------------
-    // INTERRUPTION VARIABLES SIGNALS
-    //--------------------------------------------------------------------------
-    input  logic [i_cnt:1]          irq_i,
-    output logic [i_cnt:1]          iack_o,
-
-    //--------------------------------------------------------------------------
-    // CORE DATA BUS 
-    //--------------------------------------------------------------------------
-    output logic                    bus_en_o,
-    output logic [31:0]             bus_addr_o,
-    output logic [BUS_WIDTH/8-1:0]  bus_we_o,
-    output logic [BUS_WIDTH-1:0]    bus_data_o,
-    input  logic                    periph_sel_i,     
-    input  logic [BUS_WIDTH-1:0]    periph_data_i,    
-
-    //--------------------------------------------------------------------------
-    // INSTRUCTION CACHE MEMORY 
-    //--------------------------------------------------------------------------
-    output logic                    icache_ce_o,
-    output logic [3:0]              icache_we_o,
-    output logic [ICACHE_WIDTH-1:0] icache_addr_o,
-    input  logic [31:0]             icache_data_i,
-    output logic [31:0]             icache_data_o,
-
-    //--------------------------------------------------------------------------
-    // DATA CACHE MEMORY 
-    //--------------------------------------------------------------------------
-    output logic                    dcache_ce_o,
-    output logic [3:0]              dcache_we_o,
-    output logic [DCACHE_WIDTH-1:0] dcache_addr_o,
-    input  logic [31:0]             dcache_data_i,
-    output logic [31:0]             dcache_data_o,
 
     //--------------------------------------------------------------------------
     // PE (CNI) ------> MNI
@@ -98,6 +61,8 @@ module PE
 // CORE SIGNALS
 //////////////////////////////////////////////////////////////////////////////
 
+    localparam string        OUTPUT_FILE     = "./results/Output.txt";
+
     /* Number of used bits is defined by the memory size */
     /* verilator lint_off UNUSEDSIGNAL */
     logic [31:0]            instruction_address;
@@ -106,16 +71,23 @@ module PE
 
     logic                   busy;
     logic                   stall;
+
+    logic                   enable_tb, enable_tb_r;
     logic                   enable_imem;
     logic                   enable_ram;
+
     logic                   enable_rtc, enable_plic;
     logic                   enable_rtc_r, enable_plic_r;
+
     logic                   mem_operation_enable;
     logic [31:0]            mem_address;
     logic [BUS_WIDTH  -1:0] mem_data_read, mem_data_write;
     logic [BUS_WIDTH/8-1:0] mem_write_enable;
+
     logic [BUS_WIDTH  -1:0] data_ram;
     logic [31:0]            dmem_dataR;
+    logic [BUS_WIDTH  -1:0] data_tb;
+    byte                    char;
 
     /* RTC is 64 bits but the bus is 32 bits */
     /* verilator lint_off UNUSEDSIGNAL */
@@ -130,29 +102,26 @@ module PE
 // CONTROL
 //////////////////////////////////////////////////////////////////////////////
 
-    assign enable_ram    = mem_operation_enable && ((mem_address[31:28] == 4'b0000) || (mem_address[31:28] == 4'b0001));
+    assign enable_ram    = mem_operation_enable &&  ((mem_address[31:28] == 4'b0000) || (mem_address[31:28] == 4'b0001));
     assign enable_rtc    = mem_operation_enable &&  (mem_address[31:28] == 4'b0010);
     assign enable_plic   = mem_operation_enable &&  (mem_address[31:28] == 4'b0100);
+    assign enable_tb     = mem_operation_enable &&  (mem_address[31:28] == 4'b1000);
 
     always_ff @(posedge clk) begin
         enable_rtc_r  <= enable_rtc;
         enable_plic_r <= enable_plic;
+        enable_tb_r   <= enable_tb;
     end
 
 
     always_comb begin
-        unique case ({periph_sel_i, enable_plic_r, enable_rtc_r})
-            3'b100:  mem_data_read = periph_data_i;
+        unique case ({enable_tb_r, enable_plic_r, enable_rtc_r})
+            3'b100:  mem_data_read = data_tb;
             3'b010:  mem_data_read = {{(BUS_WIDTH-32){1'b0}}, data_plic};
             3'b001:  mem_data_read = {{(BUS_WIDTH-32){1'b0}}, data_rtc[31:0]};
             default: mem_data_read = dmem_dataR;
         endcase
     end
-
-    assign bus_en_o      = mem_operation_enable;
-    assign bus_addr_o    = mem_address;
-    assign bus_we_o      = mem_write_enable;
-    assign bus_data_o    = mem_data_write;
 
 //////////////////////////////////////////////////////////////////////////////
 // CPU
@@ -191,7 +160,7 @@ module PE
 //////////////////////////////////////////////////////////////////////////////
 
     plic #(
-        .i_cnt(i_cnt)
+        .i_cnt(1)
     ) plic1 (
         .clk     (clk),
         .reset_n (reset_n),
@@ -200,10 +169,12 @@ module PE
         .addr_i  (mem_address[23:0]),
         .data_i  (mem_data_write[31:0]),
         .data_o  (data_plic),
-        .irq_i   (irq_i),
         .iack_i  (interrupt_ack),
-        .iack_o  (iack_o),
-        .irq_o   (mei)
+        .irq_o   (mei),
+        .irq_i   ('0),
+        /* verilator lint_off PINCONNECTEMPTY */
+        .iack_o  (/* Unconnected */  )
+        /* verilator lint_on PINCONNECTEMPTY */
     );
 
 //////////////////////////////////////////////////////////////////////////////
@@ -238,6 +209,25 @@ module PE
     logic [31:0]              dmem_dataW;
 
     logic                     dcache_busy;
+
+    //--------------------------------------------------------------------------
+    // INSTRUCTION CACHE MEMORY 
+    //--------------------------------------------------------------------------
+
+    logic                    icache_ce_o;
+    logic [3:0]              icache_we_o;
+    logic [ICACHE_WIDTH-1:0] icache_addr_o;
+    logic [31:0]             icache_data_i;
+    logic [31:0]             icache_data_o;
+
+    //--------------------------------------------------------------------------
+    // DATA CACHE MEMORY 
+    //--------------------------------------------------------------------------
+    logic                    dcache_ce_o;
+    logic [3:0]              dcache_we_o;
+    logic [DCACHE_WIDTH-1:0] dcache_addr_o;
+    logic [31:0]             dcache_data_i;
+    logic [31:0]             dcache_data_o;                   
 
     assign stall = dcache_busy && enable_ram;
 
@@ -296,6 +286,49 @@ module PE
         .mem_we_o    (dmem_we            ),
         .mem_data_o  (dmem_dataW         )
     );
+
+//////////////////////////////////////////////////////////////////////////////
+// Cache memories
+//////////////////////////////////////////////////////////////////////////////
+
+    RAM_mem #(
+        .MEM_WIDTH(1 << ICACHE_WIDTH),
+        .BIN_FILE("/dev/null")
+    ) icache_sram (
+        .clk    (clk),
+        .enA_i  (icache_ce_o),
+        .weA_i  (icache_we_o),
+        .addrA_i(icache_addr_o),
+        .dataA_i(icache_data_o),
+        .dataA_o(icache_data_i),
+        .enB_i  (1'b0),
+        .weB_i  ('0),
+        .addrB_i('0),
+        .dataB_i('0),
+        /* verilator lint_off PINCONNECTEMPTY */
+        .dataB_o(/* Unconnected */)
+        /* verilator lint_on PINCONNECTEMPTY */
+    );
+
+    RAM_mem #(
+        .MEM_WIDTH(1 << DCACHE_WIDTH),
+        .BIN_FILE("/dev/null")
+    ) dcache_sram (
+        .clk    (clk),
+        .enA_i  (dcache_ce_o),
+        .weA_i  (dcache_we_o),
+        .addrA_i(dcache_addr_o),
+        .dataA_i(dcache_data_o),
+        .dataA_o(dcache_data_i),
+        .enB_i  (1'b0),
+        .weB_i  ('0),
+        .addrB_i('0),
+        .dataB_i('0),
+        /* verilator lint_off PINCONNECTEMPTY */
+        .dataB_o(/* Unconnected */)
+        /* verilator lint_on PINCONNECTEMPTY */
+    );
+
 
 //////////////////////////////////////////////////////////////////////////////
 // CACHE CONTROLLERS -> CNI
@@ -383,5 +416,43 @@ module PE
         .cni_eop_i   (eop_i              ),
         .cni_data_i  (data_i             )
     );
+
+
+//////////////////////////////////////////////////////////////////////////////
+// Memory Mapped regs
+//////////////////////////////////////////////////////////////////////////////
+    int fd;
+    initial begin
+        fd = $fopen(OUTPUT_FILE,"w");
+    end
+
+    always_ff @(posedge clk) begin
+        if (enable_tb) begin
+            // OUTPUT REG
+            if ((mem_address == 32'h80004000 || mem_address == 32'h80001000) && mem_write_enable != '0) begin
+                char <= mem_data_write[7:0];
+                $write("%c",char);
+                if (char != 8'h00)
+                    $fwrite(fd,"%c",char);
+                $fflush();
+            end
+            else if (mem_address == 32'h80002000 && mem_write_enable != '0) begin
+                $write(    "%0d\n",mem_data_write);
+                $fwrite(fd,"%0d\n",mem_data_write);
+                $fflush();
+            end
+            // END REG
+            if (mem_address == 32'h80000000 && mem_write_enable != '0) begin
+                $display(    "\n# %0t END OF SIMULATION",$time);
+                $finish;
+            end
+        end
+        else begin
+            data_tb <= '0;
+        end
+    end
+
+
+
 
 endmodule

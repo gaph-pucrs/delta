@@ -39,8 +39,6 @@ module testbench
 
   timeunit 1ns; timeprecision 1ns;
 
-    localparam string        OUTPUT_FILE     = "./results/Output.txt";
-
 
 //////////////////////////////////////////////////////////////////////////////
 // PARAMETERS FOR CORE INSTANTIATION
@@ -58,8 +56,6 @@ module testbench
     localparam int           DCACHE_WIDTH    = 12;
     localparam int           DCACHE_OFF_W    = 6;
     localparam write_mode_t  DWRITE_MODE     = WRITE_BACK;
-
-    localparam int           i_cnt = 1;
 
 ///////////////////////////////////////// Clock generator //////////////////////////////
 
@@ -82,42 +78,7 @@ module testbench
     end
 
 //////////////////////////////////////////////////////////////////////////////
-// TB SIGNALS
-//////////////////////////////////////////////////////////////////////////////
-
-    logic                   enable_tb;
-    logic                   mem_operation_enable;
-    logic [31:0]            mem_address;
-    logic [BUS_WIDTH  -1:0] mem_data_write;
-    logic [BUS_WIDTH/8-1:0] mem_write_enable;
-    byte                    char;
-    logic [BUS_WIDTH  -1:0] data_tb;
-    logic                   enable_tb_r;
-
-    logic                   periph_sel;
-    logic [BUS_WIDTH  -1:0] periph_data;
-
-    /* Bits depending on connected peripherals */
-    /* verilator lint_off UNUSED */
-    logic [i_cnt:1] iack_periph;
-    /* verilator lint_on UNUSED */
-
-//////////////////////////////////////////////////////////////////////////////
-// Control
-//////////////////////////////////////////////////////////////////////////////
-
-    assign enable_tb   = mem_operation_enable && (mem_address[31:28] == 4'b1000);
-
-    always_ff @(posedge clk) begin
-        enable_tb_r     <= enable_tb;
-    end
-
-    
-    assign periph_sel  = enable_tb_r;
-    assign periph_data = data_tb;
-
-//////////////////////////////////////////////////////////////////////////////
-// PE (RS5 + ICACHE CTRL + DCACHE CTRL + CNI + RTC + PLIC)
+// PE (RS5 + ICACHE CTRL + DCACHE CTRL + CNI + RTC + PLIC + $ MEMORIES)
 //////////////////////////////////////////////////////////////////////////////
 
     // PE -> MNI
@@ -131,19 +92,6 @@ module testbench
     logic [31:0]             cni_data_i;
     logic                    cni_cr_o;
 
-    // CACHE MEMORIES
-    logic                    icache_ce;
-    logic [3:0]              icache_we;
-    logic [ICACHE_WIDTH-1:0] icache_addr;
-    logic [31:0]             icache_dataW;
-    logic [31:0]             icache_dataR;
-
-    logic                    dcache_ce;
-    logic [3:0]              dcache_we;
-    logic [DCACHE_WIDTH-1:0] dcache_addr;
-    logic [31:0]             dcache_dataW;
-    logic [31:0]             dcache_dataR;
-
     PE #(
         .BUS_WIDTH       (BUS_WIDTH      ),
         .MEM_ADDR_BITS   (MEM_ADDR_BITS  ),
@@ -155,37 +103,10 @@ module testbench
         .DWRITE_MODE     (DWRITE_MODE    ),
 
         .FLIT_SIZE       (FLIT_SIZE      ),
-        .BLOCK_SIZE      (BLOCK_SIZE     ),
-        .i_cnt           (i_cnt          )
+        .BLOCK_SIZE      (BLOCK_SIZE     )
     ) pe (
         .clk             (clk                 ),
         .reset_n         (reset_n             ),
-
-        // INTERRUPCOES DOS PERIFERICOS DA TB
-        .irq_i           ('0                  ),
-        .iack_o          (iack_periph         ),
-
-        // CORE DATA BUS - PERIPHERALS
-        .bus_en_o        (mem_operation_enable),
-        .bus_addr_o      (mem_address         ),
-        .bus_we_o        (mem_write_enable    ),
-        .bus_data_o      (mem_data_write      ),
-        .periph_sel_i    (periph_sel          ),
-        .periph_data_i   (periph_data         ),
-
-        // INSTRUCTION CACHE MEMORY
-        .icache_ce_o     (icache_ce           ),
-        .icache_we_o     (icache_we           ),
-        .icache_addr_o   (icache_addr         ),
-        .icache_data_i   (icache_dataR        ),
-        .icache_data_o   (icache_dataW        ),
-
-        // DATA CACHE MEMORY
-        .dcache_ce_o     (dcache_ce           ),
-        .dcache_we_o     (dcache_we           ),
-        .dcache_addr_o   (dcache_addr         ),
-        .dcache_data_i   (dcache_dataR        ),
-        .dcache_data_o   (dcache_dataW        ),
 
         // PE -> MNI
         .tx_o            (cni_tx              ),
@@ -211,48 +132,6 @@ module testbench
         .WMODE       (WMODE       )
     ) u_debug ();
 `endif
-
-//////////////////////////////////////////////////////////////////////////////
-// Cache memories
-//////////////////////////////////////////////////////////////////////////////
-
-    RAM_mem #(
-        .MEM_WIDTH(1 << ICACHE_WIDTH),
-        .BIN_FILE("/dev/null")
-    ) icache_sram (
-        .clk    (clk),
-        .enA_i  (icache_ce),
-        .weA_i  (icache_we),
-        .addrA_i(icache_addr),
-        .dataA_i(icache_dataW),
-        .dataA_o(icache_dataR),
-        .enB_i  (1'b0),
-        .weB_i  ('0),
-        .addrB_i('0),
-        .dataB_i('0),
-        /* verilator lint_off PINCONNECTEMPTY */
-        .dataB_o(/* Unconnected */)
-        /* verilator lint_on PINCONNECTEMPTY */
-    );
-
-    RAM_mem #(
-        .MEM_WIDTH(1 << DCACHE_WIDTH),
-        .BIN_FILE("/dev/null")
-    ) dcache_sram (
-        .clk    (clk),
-        .enA_i  (dcache_ce),
-        .weA_i  (dcache_we),
-        .addrA_i(dcache_addr),
-        .dataA_i(dcache_dataW),
-        .dataA_o(dcache_dataR),
-        .enB_i  (1'b0),
-        .weB_i  ('0),
-        .addrB_i('0),
-        .dataB_i('0),
-        /* verilator lint_off PINCONNECTEMPTY */
-        .dataB_o(/* Unconnected */)
-        /* verilator lint_on PINCONNECTEMPTY */
-    );
 
 //////////////////////////////////////////////////////////////////////////////
 // MNI
@@ -335,38 +214,5 @@ module testbench
     assign dataAi         = mni_mem_data_o;
     assign mni_mem_data_i = dataAo;
 
-//////////////////////////////////////////////////////////////////////////////
-// Memory Mapped regs
-//////////////////////////////////////////////////////////////////////////////
-    int fd;
-    initial begin
-        fd = $fopen(OUTPUT_FILE,"w");
-    end
-
-    always_ff @(posedge clk) begin
-        if (enable_tb) begin
-            // OUTPUT REG
-            if ((mem_address == 32'h80004000 || mem_address == 32'h80001000) && mem_write_enable != '0) begin
-                char <= mem_data_write[7:0];
-                $write("%c",char);
-                if (char != 8'h00)
-                    $fwrite(fd,"%c",char);
-                $fflush();
-            end
-            else if (mem_address == 32'h80002000 && mem_write_enable != '0) begin
-                $write(    "%0d\n",mem_data_write);
-                $fwrite(fd,"%0d\n",mem_data_write);
-                $fflush();
-            end
-            // END REG
-            if (mem_address == 32'h80000000 && mem_write_enable != '0) begin
-                $display(    "\n# %0t END OF SIMULATION",$time);
-                $finish;
-            end
-        end
-        else begin
-            data_tb <= '0;
-        end
-    end
 
 endmodule

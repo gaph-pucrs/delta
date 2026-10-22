@@ -42,7 +42,6 @@ module riscof_tb
 
     localparam string   BIN_FILE  = "test.bin";
     localparam int      MEM_WIDTH = 2_097_152;
-    localparam int      i_cnt     = 1;
     localparam bit      VEnable   = 1'b0;
     localparam int      VLEN      = 512;
     localparam int      LLEN      = 32;
@@ -84,42 +83,6 @@ module riscof_tb
         #100 reset_n = 1;                                     // Hold state for 100 ns
     end
 
-//////////////////////////////////////////////////////////////////////////////
-// TB SIGNALS
-//////////////////////////////////////////////////////////////////////////////
-
-    /* Number of used bits is defined by the memory size */
-
-    /* RTC is 64 bits but the bus is 32 bits */
-
-    logic                   enable_tb;
-    logic                   mem_operation_enable;
-    logic [31:0]            mem_address, mem_data_write;
-    logic [3:0]             mem_write_enable;
-    logic [31:0]            data_tb;
-    logic                   enable_tb_r;
-
-    logic                   periph_sel;
-    logic [BUS_WIDTH  -1:0] periph_data;
-
-    /* verilator lint_off UNUSED */
-    logic [i_cnt:1] iack_periph;
-    /* verilator lint_on UNUSED */
-
-
-//////////////////////////////////////////////////////////////////////////////
-// Control
-//////////////////////////////////////////////////////////////////////////////
-
-    assign enable_tb   = mem_operation_enable && (mem_address[31:28] == 4'b1000);
-
-    always_ff @(posedge clk) begin
-        enable_tb_r     <= enable_tb;
-    end
-
-    
-    assign periph_sel  = enable_tb_r;
-    assign periph_data = data_tb;
 
 //////////////////////////////////////////////////////////////////////////////
 // PE (RS5 + ICACHE CTRL + DCACHE CTRL + CNI + RTC + PLIC)
@@ -136,62 +99,22 @@ module riscof_tb
     logic [31:0]             cni_data_i;
     logic                    cni_cr_o;
 
-    // CACHE MEMORIES
-    logic                    icache_ce;
-    logic [3:0]              icache_we;
-    logic [CACHE_WIDTH-1:0]  icache_addr;
-    logic [31:0]             icache_dataW;
-    logic [31:0]             icache_dataR;
-
-    logic                    dcache_ce;
-    logic [3:0]              dcache_we;
-    logic [CACHE_WIDTH-1:0]  dcache_addr;
-    logic [31:0]             dcache_dataW;
-    logic [31:0]             dcache_dataR;
-
     PE #(
 
         .BUS_WIDTH       (BUS_WIDTH      ),
         .MEM_ADDR_BITS   (MEM_ADDR_BITS  ),
-        .ICACHE_WIDTH    (CACHE_WIDTH   ),
-        .ICACHE_OFF_W    (CACHE_OFF_W   ),
+        .ICACHE_WIDTH    (CACHE_WIDTH    ),
+        .ICACHE_OFF_W    (CACHE_OFF_W    ),
         .IWRITE_MODE     (IWRITE_MODE    ),
-        .DCACHE_WIDTH    (CACHE_WIDTH   ),
-        .DCACHE_OFF_W    (CACHE_OFF_W   ),
+        .DCACHE_WIDTH    (CACHE_WIDTH    ),
+        .DCACHE_OFF_W    (CACHE_OFF_W    ),
         .DWRITE_MODE     (DWRITE_MODE    ),
 
         .FLIT_SIZE       (FLIT_SIZE      ),
-        .BLOCK_SIZE      (BLOCK_SIZE     ),
-        .i_cnt           (i_cnt          )
+        .BLOCK_SIZE      (BLOCK_SIZE     )
     ) pe (
         .clk             (clk                 ),
         .reset_n         (reset_n             ),
-
-        // INTERRUPCOES DOS PERIFERICOS DA TB
-        .irq_i           ('0                  ),
-        .iack_o          (iack_periph         ),
-
-        // CORE DATA BUS - PERIPHERALS
-        .bus_en_o        (mem_operation_enable),
-        .bus_addr_o      (mem_address         ),
-        .bus_we_o        (mem_write_enable    ),
-        .bus_data_o      (mem_data_write      ),
-        .periph_sel_i    (periph_sel          ),
-        .periph_data_i   (periph_data         ),
-
-        // INSTRUCTION CACHE MEMORY
-        .icache_ce_o     (icache_ce           ),
-        .icache_we_o     (icache_we           ),
-        .icache_addr_o   (icache_addr         ),
-        .icache_data_i   (icache_dataR        ),
-        .icache_data_o   (icache_dataW        ),
-
-        // DATA CACHE MEMORY
-        .dcache_ce_o     (dcache_ce           ),
-        .dcache_we_o     (dcache_we           ),
-        .dcache_addr_o   (dcache_addr         ),
-        .dcache_data_i   (dcache_dataR        ),
-        .dcache_data_o   (dcache_dataW        ),
 
         // PE -> MNI
         .tx_o            (cni_tx              ),
@@ -204,47 +127,6 @@ module riscof_tb
         .eop_i           (cni_eop_i           ),
         .data_i          (cni_data_i          ),
         .credit_o        (cni_cr_o            )
-    );
-//////////////////////////////////////////////////////////////////////////////
-// Cache memories
-//////////////////////////////////////////////////////////////////////////////
-
-    RAM_mem #(
-        .MEM_WIDTH(1 << CACHE_WIDTH),
-        .BIN_FILE("/dev/null")
-    ) icache_sram (
-        .clk    (clk),
-        .enA_i  (icache_ce),
-        .weA_i  (icache_we),
-        .addrA_i(icache_addr),
-        .dataA_i(icache_dataW),
-        .dataA_o(icache_dataR),
-        .enB_i  (1'b0),
-        .weB_i  ('0),
-        .addrB_i('0),
-        .dataB_i('0),
-        /* verilator lint_off PINCONNECTEMPTY */
-        .dataB_o(/* Unconnected */)
-        /* verilator lint_on PINCONNECTEMPTY */
-    );
-
-    RAM_mem #(
-        .MEM_WIDTH(1 << CACHE_WIDTH),
-        .BIN_FILE("/dev/null")
-    ) dcache_sram (
-        .clk    (clk),
-        .enA_i  (dcache_ce),
-        .weA_i  (dcache_we),
-        .addrA_i(dcache_addr),
-        .dataA_i(dcache_dataW),
-        .dataA_o(dcache_dataR),
-        .enB_i  (1'b0),
-        .weB_i  ('0),
-        .addrB_i('0),
-        .dataB_i('0),
-        /* verilator lint_off PINCONNECTEMPTY */
-        .dataB_o(/* Unconnected */)
-        /* verilator lint_on PINCONNECTEMPTY */
     );
 
 //////////////////////////////////////////////////////////////////////////////
@@ -338,7 +220,7 @@ module riscof_tb
     int fd;
 
     always_ff @(posedge clk) begin
-        if (mem_address == TOHOST_ADDR && mem_write_enable != '0)
+        if (pe.mem_address == TOHOST_ADDR && pe.mem_write_enable != '0)
             $finish();
     end
 
@@ -356,14 +238,14 @@ module riscof_tb
             logic [MEM_ADDR_BITS-1:0]             ma;
             logic [MEM_ADDR_BITS-CACHE_WIDTH-1:0] tg;
             logic [CACHE_WIDTH-CACHE_OFF_W-1:0]   ix;
-            logic [CACHE_WIDTH-1:0]                cb;
+            logic [CACHE_WIDTH-1:0]               cb;
             ma = a[MEM_ADDR_BITS-1:0];
             tg = ma[MEM_ADDR_BITS-1 -: MEM_ADDR_BITS-CACHE_WIDTH];
             ix = ma[CACHE_WIDTH-1 -: CACHE_WIDTH-CACHE_OFF_W];
             cb = ma[CACHE_WIDTH-1:0];
             if (pe.dcache_ctrl.entries[ix].valid && pe.dcache_ctrl.entries[ix].tag == tg)
-                return {dcache_sram.RAM[cb+3], dcache_sram.RAM[cb+2],
-                        dcache_sram.RAM[cb+1], dcache_sram.RAM[cb+0]};
+                return {pe.dcache_sram.RAM[cb+3], pe.dcache_sram.RAM[cb+2],
+                        pe.dcache_sram.RAM[cb+1], pe.dcache_sram.RAM[cb+0]};
             else 
                 return {RAM_MEM.RAM[ma+3], RAM_MEM.RAM[ma+2],
                         RAM_MEM.RAM[ma+1], RAM_MEM.RAM[ma+0]};
@@ -371,8 +253,8 @@ module riscof_tb
     end
 
     final begin
-        for (int i = SIG_START; i < SIG_END; i=i+4)
-            $fwrite(fd, "%x\n", gen_sig_word.sig_word(i[31:0]));
+    for (int i = SIG_START; i < SIG_END; i=i+4)
+        $fwrite(fd, "%x\n", gen_sig_word.sig_word(i[31:0]));
         $fclose(fd);
         $display("# %t END OF SIMULATION",$time);
     end
