@@ -4,3 +4,6 @@
 [submodule "CacheControllers"]
 	path = CacheControllers
 	url = ../CacheControllers.git
+[submodule "Hermes"]
+	path = Hermes
+	url = https://github.com/gaph-pucrs/Hermes.git

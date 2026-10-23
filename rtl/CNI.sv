@@ -70,8 +70,8 @@ module CNI #(
 
     logic [(CNT_WIDTH - 1):0]      flit_cnt;                                            // ME INDICA QUAL FLIT IRÁ SER TRANSMITIDO
     logic [(CNT_WIDTH - 1):0]   payload_len;                                            // ULTIMO INDICE DE FLIT DO PACOTE ATUAL - DEFINE O EOP 
-    logic                      wr_word_v;                                              
-    logic                   wr_data_sent;                                               
+    logic                         wr_word_v;                                              
+    logic                      wr_data_sent;                                               
     /* verilator lint_off UNUSEDSIGNAL */
     logic [(FLIT_SIZE - 1):0]         flits [(FLIT_NUMBER - 1):0];                      // ME ALOCA UM NUMERO X DE FLITS COM O TAMANHO DE 32 BITS
     /* verilator lint_on UNUSEDSIGNAL */

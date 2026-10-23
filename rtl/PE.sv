@@ -36,7 +36,6 @@ module PE
 )
 (
     
-
     input  logic                    clk,
     input  logic                    reset_n,
 
