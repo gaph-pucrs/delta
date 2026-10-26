@@ -38,14 +38,21 @@ module testbench
 );
 
   timeunit 1ns; timeprecision 1ns;
+    
+    localparam string        OUTPUT_FILE     = "./results/Output.txt";
 
+
+//////////////////////////////////////////////////////////////////////////////
+// TB SIGNALS
+//////////////////////////////////////////////////////////////////////////////
+    byte                    char;
 
 //////////////////////////////////////////////////////////////////////////////
 // PARAMETERS FOR CORE INSTANTIATION
 //////////////////////////////////////////////////////////////////////////////
     localparam int           BUS_WIDTH       = 32;
     localparam int           MEM_ADDR_BITS   = 28;
-    localparam string        BIN_FILE        = "../RS5/app/riscv-tests/test.bin";
+    localparam string        BIN_FILE        = "../RS5/app/coremark/coremark.bin";
 
     localparam int           FLIT_SIZE       = 32;
     localparam int           BLOCK_SIZE      = 16;
@@ -56,6 +63,8 @@ module testbench
     localparam int           DCACHE_WIDTH    = 12;
     localparam int           DCACHE_OFF_W    = 6;
     localparam write_mode_t  DWRITE_MODE     = WRITE_BACK;
+
+    
 
 ///////////////////////////////////////// Clock generator //////////////////////////////
 
@@ -93,17 +102,17 @@ module testbench
     logic                    cni_cr_o;
 
     PE #(
-        .BUS_WIDTH       (BUS_WIDTH      ),
-        .MEM_ADDR_BITS   (MEM_ADDR_BITS  ),
-        .ICACHE_WIDTH    (ICACHE_WIDTH   ),
-        .ICACHE_OFF_W    (ICACHE_OFF_W   ),
-        .IWRITE_MODE     (IWRITE_MODE    ),
-        .DCACHE_WIDTH    (DCACHE_WIDTH   ),
-        .DCACHE_OFF_W    (DCACHE_OFF_W   ),
-        .DWRITE_MODE     (DWRITE_MODE    ),
+        .BUS_WIDTH       (BUS_WIDTH),
+        .MEM_ADDR_BITS   (MEM_ADDR_BITS),
+        .ICACHE_WIDTH    (ICACHE_WIDTH),
+        .ICACHE_OFF_W    (ICACHE_OFF_W),
+        .IWRITE_MODE     (IWRITE_MODE),
+        .DCACHE_WIDTH    (DCACHE_WIDTH),
+        .DCACHE_OFF_W    (DCACHE_OFF_W),
+        .DWRITE_MODE     (DWRITE_MODE),
 
-        .FLIT_SIZE       (FLIT_SIZE      ),
-        .BLOCK_SIZE      (BLOCK_SIZE     )
+        .FLIT_SIZE       (FLIT_SIZE),
+        .BLOCK_SIZE      (BLOCK_SIZE)
     ) pe (
         .clk             (clk                 ),
         .reset_n         (reset_n             ),
@@ -121,6 +130,37 @@ module testbench
         .credit_o        (cni_cr_o            )
     );
 
+//////////////////////////////////////////////////////////////////////////////
+// ME (MNI + MAIN MEMORY)
+//////////////////////////////////////////////////////////////////////////////
+
+localparam int MEM_WIDTH = 1 << MEM_ADDR_BITS;
+
+ME #(
+        .MEM_ADDR_BITS   (MEM_ADDR_BITS),
+        .FLIT_SIZE       (FLIT_SIZE),
+        .BLOCK_SIZE      (BLOCK_SIZE),
+
+        .MEM_WIDTH       (MEM_WIDTH),
+        .BIN_FILE        (BIN_FILE),
+        .BUS_WIDTH       (BUS_WIDTH)
+) me (
+        .clk             (clk                 ),
+        .reset_n         (reset_n             ),
+
+        // PE -> MNI
+        .me_tx_o            (cni_rx           ),
+        .me_eop_o           (cni_eop_i        ),
+        .me_data_o          (cni_data_i       ),
+        .me_cr_i            (cni_cr_o         ),
+
+        // MNI -> PE
+        .me_rx_i            (cni_tx           ),
+        .me_eop_i           (cni_eop          ),
+        .me_data_i          (cni_data_o       ),
+        .me_cr_o            (mni_cr           )
+    );
+
 `ifdef CACHE_DEBUG
     // One DMDebug inside every DMCtrl (icache and dcache). The names on the
     // right side are evaluated in the scope of each bound DMCtrl, not here:
@@ -134,85 +174,41 @@ module testbench
 `endif
 
 //////////////////////////////////////////////////////////////////////////////
-// MNI
+// Memory Mapped regs
 //////////////////////////////////////////////////////////////////////////////
-    logic                             mni_mem_ce;
-    logic [31:0]                      mni_mem_data_i;
-    logic [3:0]                       mni_mem_we;
-    logic [31:0]                      mni_mem_data_o;
-/* verilator lint_off UNUSEDSIGNAL */
-    logic [31:0]                      mni_mem_addr;
-/* verilator lint_on UNUSEDSIGNAL */
+    int fd;
+    initial begin
+        fd = $fopen(OUTPUT_FILE,"w");
+    end
 
-       MNI #(
-            .ADDR_WIDTH  (MEM_ADDR_BITS),
-            .FLIT_SIZE   (FLIT_SIZE ),
-            .BLOCK_WORDS (BLOCK_SIZE )
-       ) mni (
-            .clk         (clk                ),
-            .rst_n       (reset_n            ),
-
-
-            .mni_cr_i        (cni_cr_o           ),
-            .mni_tx_o        (cni_rx             ),
-            .mni_eop_o       (cni_eop_i          ),
-            .mni_data_o      (cni_data_i         ),
-
-
-            .mni_mem_ce_o    (mni_mem_ce         ),
-            .mni_mem_addr_o  (mni_mem_addr       ),
-            .mni_mem_data_i  (mni_mem_data_i     ),
-            .mni_mem_we_o    (mni_mem_we         ),
-            .mni_mem_data_o  (mni_mem_data_o     ),
-
-
-            .mni_rx_i        (cni_tx             ),
-            .mni_cr_o        (mni_cr             ),
-            .mni_eop_i       (cni_eop            ),
-            .mni_data_i      (cni_data_o         )
-
-        );
+    always_ff @(posedge clk) begin
+        if (pe.enable_tb) begin
+            // OUTPUT REG
+            if ((pe.mem_address == 32'h80004000 || pe.mem_address == 32'h80001000) && pe.mem_write_enable != '0) begin
+                char <= pe.mem_data_write[7:0];
+                $write("%c",char);
+                if (char != 8'h00)
+                    $fwrite(fd,"%c",char);
+                $fflush();
+            end
+            else if (pe.mem_address == 32'h80002000 && pe.mem_write_enable != '0) begin
+                $write(    "%0d\n",pe.mem_data_write);
+                $fwrite(fd,"%0d\n",pe.mem_data_write);
+                $fflush();
+            end
+            // END REG
+            if (pe.mem_address == 32'h80000000 && pe.mem_write_enable != '0) begin
+                $display(    "\n# %0t END OF SIMULATION",$time);
+                $finish;
+            end
+        end
+        else begin
+            pe.data_tb <= '0;
+        end
+    end
 
 
-//////////////////////////////////////////////////////////////////////////////
-// RAM 
-//////////////////////////////////////////////////////////////////////////////
 
-    localparam int MEM_WIDTH = 1 << MEM_ADDR_BITS;
-
-    logic                             enA;
-    logic [BUS_WIDTH/8-1:0]           weA;
-    logic [($clog2(MEM_WIDTH) - 1):0] addrA;
-    logic [BUS_WIDTH-1:0]             dataAi;
-    logic [BUS_WIDTH-1:0]             dataAo;
-
-    RAM_mem #(
-        .BUS_WIDTH(BUS_WIDTH  ),
-        .MEM_WIDTH(MEM_WIDTH  ),
-        .BIN_FILE (BIN_FILE   )
-    ) RAM_MEM (
-        .clk        (clk),
-
-        .enA_i      (enA),
-        .weA_i      (weA),
-        .addrA_i    (addrA),
-        .dataA_i    (dataAi),
-        .dataA_o    (dataAo),
-
-        .enB_i      (1'b0),
-        .weB_i      ('0),
-        .addrB_i    ('0),
-        .dataB_i    ('0),
-        /* verilator lint_off PINCONNECTEMPTY */
-        .dataB_o    (/* Unconnected */)
-        /* verilator lint_on PINCONNECTEMPTY */
-    );
-
-    assign enA            = mni_mem_ce;
-    assign weA            = mni_mem_we;
-    assign addrA          = mni_mem_addr[($clog2(MEM_WIDTH) - 1):0];
-    assign dataAi         = mni_mem_data_o;
-    assign mni_mem_data_i = dataAo;
 
 
 endmodule

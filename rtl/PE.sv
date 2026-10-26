@@ -60,8 +60,6 @@ module PE
 // CORE SIGNALS
 //////////////////////////////////////////////////////////////////////////////
 
-    localparam string        OUTPUT_FILE     = "./results/Output.txt";
-
     /* Number of used bits is defined by the memory size */
     /* verilator lint_off UNUSEDSIGNAL */
     logic [31:0]            instruction_address;
@@ -86,7 +84,6 @@ module PE
     logic [BUS_WIDTH  -1:0] data_ram;
     logic [31:0]            dmem_dataR;
     logic [BUS_WIDTH  -1:0] data_tb;
-    byte                    char;
 
     /* RTC is 64 bits but the bus is 32 bits */
     /* verilator lint_off UNUSEDSIGNAL */
@@ -415,43 +412,5 @@ module PE
         .cni_eop_i   (eop_i              ),
         .cni_data_i  (data_i             )
     );
-
-
-//////////////////////////////////////////////////////////////////////////////
-// Memory Mapped regs
-//////////////////////////////////////////////////////////////////////////////
-    int fd;
-    initial begin
-        fd = $fopen(OUTPUT_FILE,"w");
-    end
-
-    always_ff @(posedge clk) begin
-        if (enable_tb) begin
-            // OUTPUT REG
-            if ((mem_address == 32'h80004000 || mem_address == 32'h80001000) && mem_write_enable != '0) begin
-                char <= mem_data_write[7:0];
-                $write("%c",char);
-                if (char != 8'h00)
-                    $fwrite(fd,"%c",char);
-                $fflush();
-            end
-            else if (mem_address == 32'h80002000 && mem_write_enable != '0) begin
-                $write(    "%0d\n",mem_data_write);
-                $fwrite(fd,"%0d\n",mem_data_write);
-                $fflush();
-            end
-            // END REG
-            if (mem_address == 32'h80000000 && mem_write_enable != '0) begin
-                $display(    "\n# %0t END OF SIMULATION",$time);
-                $finish;
-            end
-        end
-        else begin
-            data_tb <= '0;
-        end
-    end
-
-
-
 
 endmodule

@@ -11,8 +11,7 @@
 module MNI #(
     parameter int unsigned ADDR_WIDTH  = 20,
     parameter int unsigned FLIT_SIZE   = 32,
-    parameter int unsigned BLOCK_WORDS = 16,   // TAMANHO DO BLOCO DA CACHE
-    parameter int unsigned MEM_LATENCY = 1     // ciclos entre mem_addr_o valido e mem_data_i valido, criado para sincronizar envio de endereços e recebimento de instruções da memoria
+    parameter int unsigned BLOCK_WORDS = 16   // TAMANHO DO BLOCO DA CACHE
 )
 (
     input  logic                         clk,
@@ -55,7 +54,8 @@ module MNI #(
     //--------------------------------------------------------------------------
 
     localparam int unsigned CNT_WIDTH = (BLOCK_WORDS > 1) ? $clog2(BLOCK_WORDS) : 1;
-
+    localparam int unsigned MEM_LATENCY = 1;                                         // ciclos entre mem_addr_o valido e mem_data_i valido, 
+                                                                                     // criado para sincronizar envio de endereços e recebimento de instruções da memoria
 
     localparam int unsigned READ_RESP_PAYLOAD = BLOCK_WORDS;
 

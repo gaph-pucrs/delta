@@ -37,7 +37,7 @@ module CNI #(
     output logic                         mem_busy_o,
 
     //--------------------------------------------------------------------------
-    // CNI ------> MNI 
+    // CNI ------> HERMES 
     //--------------------------------------------------------------------------
 
     output logic                         cni_tx_o,
@@ -46,7 +46,7 @@ module CNI #(
     output logic [31:0]                  cni_data_o,
 
     //--------------------------------------------------------------------------
-    // CNI <------ MNI 
+    // CNI <------ HERMES 
     //--------------------------------------------------------------------------
     
     output logic                         cni_cr_o,
@@ -82,14 +82,14 @@ module CNI #(
     logic [7:0]                          hx;                                            // COORDENADAS X DO TARGET
     logic [7:0]                          hy;                                            // COORDENADAS Y DO TARGET
 
-    logic [31:0]            origin_position;  
+    logic [31:0]            origin_position;                                            // FLIT QUE CONTEM AS COORDENDAS X & Y DE ORIGEM
     logic [7:0]                   hx_origin;                                            // COORDENADAS X DA ORIGEM
     logic [7:0]                   hy_origin;                                            // COORDENADAS Y DA ORIGEM
 
 
     logic                   fill_word_taken;
                                           
-    // REGISTER VARIABLES - NOVO
+    // REGISTER VARIABLES
     logic [ADDR_WIDTH-1:0]           addr_r;
     logic [3:0]                        wr_r;
 
@@ -146,7 +146,7 @@ module CNI #(
         CNI_SEND_READ_REQUEST     = 3'b001,
         CNI_WAIT_READ_RESPONSE    = 3'b010,
         CNI_RECEIVE_READ_RESPONSE = 3'b011,
-        CNI_SEND_WRITE_REQUEST    = 3'b100  // NOVO
+        CNI_SEND_WRITE_REQUEST    = 3'b100
     } cni_state_t;
 
     cni_state_t state, next_state;

@@ -130,88 +130,33 @@ module riscof_tb
     );
 
 //////////////////////////////////////////////////////////////////////////////
-// MNI
-//////////////////////////////////////////////////////////////////////////////
-    logic                             mni_mem_ce;
-    logic [31:0]                      mni_mem_data_i;
-    logic [3:0]                       mni_mem_we;
-    logic [31:0]                      mni_mem_data_o;
-/* verilator lint_off UNUSEDSIGNAL */
-    logic [31:0]                      mni_mem_addr;
-/* verilator lint_on UNUSEDSIGNAL */
-
-       MNI #(
-            .ADDR_WIDTH  (MEM_ADDR_BITS),
-            .FLIT_SIZE   (FLIT_SIZE ),
-            .BLOCK_WORDS (BLOCK_SIZE )
-       ) mni (
-            .clk         (clk                ),
-            .rst_n       (reset_n            ),
-
-
-            .mni_cr_i        (cni_cr_o           ),
-            .mni_tx_o        (cni_rx             ),
-            .mni_eop_o       (cni_eop_i          ),
-            .mni_data_o      (cni_data_i         ),
-
-
-            .mni_mem_ce_o    (mni_mem_ce         ),
-            .mni_mem_addr_o  (mni_mem_addr       ),
-            .mni_mem_data_i  (mni_mem_data_i     ),
-            .mni_mem_we_o    (mni_mem_we         ),
-            .mni_mem_data_o  (mni_mem_data_o     ),
-
-
-            .mni_rx_i        (cni_tx             ),
-            .mni_cr_o        (mni_cr             ),
-            .mni_eop_i       (cni_eop            ),
-            .mni_data_i      (cni_data_o         )
-
-        );
-
-
-//////////////////////////////////////////////////////////////////////////////
-// RAM 
+// ME (MNI + MAIN MEMORY)
 //////////////////////////////////////////////////////////////////////////////
 
+ME #(
+        .MEM_ADDR_BITS   (MEM_ADDR_BITS  ),
+        .FLIT_SIZE       (FLIT_SIZE      ),
+        .BLOCK_SIZE      (BLOCK_SIZE     ),
 
-    logic                             enA;
-    logic [BUS_WIDTH/8-1:0]           weA;
-    logic [($clog2(MEM_WIDTH) - 1):0] addrA;
-    logic [BUS_WIDTH-1:0]             dataAi;
-    logic [BUS_WIDTH-1:0]             dataAo;
+        .MEM_WIDTH       (MEM_WIDTH      ),
+        .BIN_FILE        (BIN_FILE       ),
+        .BUS_WIDTH       (BUS_WIDTH      )
+) me (
+        .clk             (clk                 ),
+        .reset_n         (reset_n             ),
 
-    RAM_mem #(
-    `ifndef SYNTH
-        .DEBUG     (DEBUG     ),
-        .DEBUG_PATH("./debug/"),
-    `endif
-        .BUS_WIDTH(BUS_WIDTH  ),
-        .MEM_WIDTH(MEM_WIDTH  ),
-        .BIN_FILE (BIN_FILE   )
-    ) RAM_MEM (
-        .clk        (clk),
+        // PE -> MNI
+        .me_tx_o         (cni_rx              ),
+        .me_eop_o        (cni_eop_i           ),
+        .me_data_o       (cni_data_i          ),
+        .me_cr_i         (cni_cr_o            ),
 
-        .enA_i      (enA),
-        .weA_i      (weA),
-        .addrA_i    (addrA),
-        .dataA_i    (dataAi),
-        .dataA_o    (dataAo),
-
-        .enB_i      (1'b0),
-        .weB_i      ('0),
-        .addrB_i    ('0),
-        .dataB_i    ('0),
-        /* verilator lint_off PINCONNECTEMPTY */
-        .dataB_o    (/* Unconnected */)
-        /* verilator lint_on PINCONNECTEMPTY */
+        // MNI -> PE
+        .me_rx_i         (cni_tx              ),
+        .me_eop_i        (cni_eop             ),
+        .me_data_i       (cni_data_o          ),
+        .me_cr_o         (mni_cr              )
     );
-
-    assign enA            = mni_mem_ce;
-    assign weA            = mni_mem_we;
-    assign addrA          = mni_mem_addr[($clog2(MEM_WIDTH) - 1):0];
-    assign dataAi         = mni_mem_data_o;
-    assign mni_mem_data_i = dataAo;
 
 //////////////////////////////////////////////////////////////////////////////
 // Memory Mapped regs
@@ -247,8 +192,8 @@ module riscof_tb
                 return {pe.dcache_sram.RAM[cb+3], pe.dcache_sram.RAM[cb+2],
                         pe.dcache_sram.RAM[cb+1], pe.dcache_sram.RAM[cb+0]};
             else 
-                return {RAM_MEM.RAM[ma+3], RAM_MEM.RAM[ma+2],
-                        RAM_MEM.RAM[ma+1], RAM_MEM.RAM[ma+0]};
+                return {me.RAM_MEM.RAM[ma+3], me.RAM_MEM.RAM[ma+2],
+                        me.RAM_MEM.RAM[ma+1], me.RAM_MEM.RAM[ma+0]};
         endfunction
     end
 
