@@ -20,6 +20,9 @@
 
 `include "../RS5/rtl/RS5_pkg.sv"
 `include "../CacheControllers/rtl/DMPkg.sv"
+`include "../Hermes/rtl/HermesPkg.sv"
+
+
 
 `define CACHE_DEBUG   // Per-line cache FILL/EVICT/DIRTY logs in ./debug/; comment out to disable
 
@@ -52,7 +55,7 @@ module testbench
 //////////////////////////////////////////////////////////////////////////////
     localparam int           BUS_WIDTH       = 32;
     localparam int           MEM_ADDR_BITS   = 28;
-    localparam string        BIN_FILE        = "../RS5/app/coremark/coremark.bin";
+    localparam string        BIN_FILE        = "../RS5/app/mem-test/mem-test.bin";
 
     localparam int           FLIT_SIZE       = 32;
     localparam int           BLOCK_SIZE      = 16;
@@ -81,85 +84,45 @@ module testbench
     logic reset_n;
 
     initial begin
-        reset_n = 0;                                          // RESET for CPU initialization
+        reset_n = 0;                                            // RESET for CPU initialization
 
         #100 reset_n = 1;                                     // Hold state for 100 ns
     end
 
 //////////////////////////////////////////////////////////////////////////////
-// PE (RS5 + ICACHE CTRL + DCACHE CTRL + CNI + RTC + PLIC + $ MEMORIES)
+// NoC
 //////////////////////////////////////////////////////////////////////////////
 
-    // PE -> MNI
-    logic                    cni_tx;
-    logic                    cni_eop;
-    logic [31:0]             cni_data_o;
-    logic                    mni_cr;
-    // MNI -> PE
-    logic                    cni_rx;
-    logic                    cni_eop_i;
-    logic [31:0]             cni_data_i;
-    logic                    cni_cr_o;
 
-    PE #(
-        .BUS_WIDTH       (BUS_WIDTH),
-        .MEM_ADDR_BITS   (MEM_ADDR_BITS),
-        .ICACHE_WIDTH    (ICACHE_WIDTH),
-        .ICACHE_OFF_W    (ICACHE_OFF_W),
-        .IWRITE_MODE     (IWRITE_MODE),
-        .DCACHE_WIDTH    (DCACHE_WIDTH),
-        .DCACHE_OFF_W    (DCACHE_OFF_W),
-        .DWRITE_MODE     (DWRITE_MODE),
+    localparam logic [15:0]  PE_ADDRESS = 16'h0000;    // {X, Y} = (0,0)
+    localparam logic [15:0]  ME_ADDRESS = 16'h0202;    // {X, Y} = (2,2)
+    localparam int           MEM_WIDTH  = 1 << MEM_ADDR_BITS;
 
-        .FLIT_SIZE       (FLIT_SIZE),
-        .BLOCK_SIZE      (BLOCK_SIZE)
-    ) pe (
-        .clk             (clk                 ),
-        .reset_n         (reset_n             ),
+    DeltaMC #(
+        .N_PE_X        (3            ),
+        .N_PE_Y        (3            ),
+        .PE_ADDRESS    (PE_ADDRESS   ),
+        .ME_ADDRESS    (ME_ADDRESS   ),
 
-        // PE -> MNI
-        .tx_o            (cni_tx              ),
-        .eop_o           (cni_eop             ),
-        .data_o          (cni_data_o          ),
-        .credit_i        (mni_cr              ),
+        .BUS_WIDTH     (BUS_WIDTH    ),
+        .MEM_ADDR_BITS (MEM_ADDR_BITS),
+        .ICACHE_WIDTH  (ICACHE_WIDTH ),
+        .ICACHE_OFF_W  (ICACHE_OFF_W ),
+        .IWRITE_MODE   (IWRITE_MODE  ),
+        .DCACHE_WIDTH  (DCACHE_WIDTH ),
+        .DCACHE_OFF_W  (DCACHE_OFF_W ),
+        .DWRITE_MODE   (DWRITE_MODE  ),
+        .FLIT_SIZE     (FLIT_SIZE    ),
+        .BLOCK_SIZE    (BLOCK_SIZE   ),
 
-        // MNI -> PE
-        .rx_i            (cni_rx              ),
-        .eop_i           (cni_eop_i           ),
-        .data_i          (cni_data_i          ),
-        .credit_o        (cni_cr_o            )
+        .MEM_WIDTH     (MEM_WIDTH    ),
+        .BIN_FILE      (BIN_FILE     )
+    ) noc (
+        .clk_i         (clk          ),
+        .rst_ni        (reset_n      )
     );
 
-//////////////////////////////////////////////////////////////////////////////
-// ME (MNI + MAIN MEMORY)
-//////////////////////////////////////////////////////////////////////////////
 
-localparam int MEM_WIDTH = 1 << MEM_ADDR_BITS;
-
-ME #(
-        .MEM_ADDR_BITS   (MEM_ADDR_BITS),
-        .FLIT_SIZE       (FLIT_SIZE),
-        .BLOCK_SIZE      (BLOCK_SIZE),
-
-        .MEM_WIDTH       (MEM_WIDTH),
-        .BIN_FILE        (BIN_FILE),
-        .BUS_WIDTH       (BUS_WIDTH)
-) me (
-        .clk             (clk                 ),
-        .reset_n         (reset_n             ),
-
-        // PE -> MNI
-        .me_tx_o            (cni_rx           ),
-        .me_eop_o           (cni_eop_i        ),
-        .me_data_o          (cni_data_i       ),
-        .me_cr_i            (cni_cr_o         ),
-
-        // MNI -> PE
-        .me_rx_i            (cni_tx           ),
-        .me_eop_i           (cni_eop          ),
-        .me_data_i          (cni_data_o       ),
-        .me_cr_o            (mni_cr           )
-    );
 
 `ifdef CACHE_DEBUG
     // One DMDebug inside every DMCtrl (icache and dcache). The names on the
@@ -182,28 +145,28 @@ ME #(
     end
 
     always_ff @(posedge clk) begin
-        if (pe.enable_tb) begin
+        if (noc.pe.enable_tb) begin
             // OUTPUT REG
-            if ((pe.mem_address == 32'h80004000 || pe.mem_address == 32'h80001000) && pe.mem_write_enable != '0) begin
-                char <= pe.mem_data_write[7:0];
+            if ((noc.pe.mem_address == 32'h80004000 || noc.pe.mem_address == 32'h80001000) && noc.pe.mem_write_enable != '0) begin
+                char <= noc.pe.mem_data_write[7:0];
                 $write("%c",char);
                 if (char != 8'h00)
                     $fwrite(fd,"%c",char);
                 $fflush();
             end
-            else if (pe.mem_address == 32'h80002000 && pe.mem_write_enable != '0) begin
-                $write(    "%0d\n",pe.mem_data_write);
-                $fwrite(fd,"%0d\n",pe.mem_data_write);
+            else if (noc.pe.mem_address == 32'h80002000 && noc.pe.mem_write_enable != '0) begin
+                $write(    "%0d\n",noc.pe.mem_data_write);
+                $fwrite(fd,"%0d\n",noc.pe.mem_data_write);
                 $fflush();
             end
             // END REG
-            if (pe.mem_address == 32'h80000000 && pe.mem_write_enable != '0) begin
+            if (noc.pe.mem_address == 32'h80000000 && noc.pe.mem_write_enable != '0) begin
                 $display(    "\n# %0t END OF SIMULATION",$time);
                 $finish;
             end
         end
         else begin
-            pe.data_tb <= '0;
+            noc.pe.data_tb <= '0;
         end
     end
 

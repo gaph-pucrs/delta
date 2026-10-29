@@ -65,6 +65,7 @@ class rs5(pluginTemplate):
             -I{dut_dir}/RS5/rtl/\
             -I{dut_dir}/RS5/sim/\
             -I{dut_dir}/sim/\
+            -I{dut_dir}/Hermes/rtl/\
             -I{dut_dir}/rtl/\
             -I{dut_dir}/RS5/rtl/aes\
             -I{dut_dir}/CacheControllers/rtl/\

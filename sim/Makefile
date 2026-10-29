@@ -24,7 +24,7 @@ default: run
 run:
 	@echo
 	@echo "-- VERILATE ----------------"
-	@$(VERILATOR) $(VERILATOR_FLAGS) $(VERILATOR_INPUT) --binary -j 0 -I../rtl -I../RS5/rtl -I../RS5/rtl/aes -I../RS5/rtl/vector -I../RS5/RingBuffer/rtl -I../CacheControllers/rtl --timescale 1ns/1ns
+	@$(VERILATOR) $(VERILATOR_FLAGS) $(VERILATOR_INPUT) --binary -j 0 -I../rtl -I../RS5/rtl -I../RS5/rtl/aes -I../RS5/rtl/vector -I../RS5/RingBuffer/rtl -I../CacheControllers/rtl -I../Hermes/rtl --timescale 1ns/1ns
 
 	@echo
 	@echo "-- RUN ---------------------"
@@ -38,7 +38,7 @@ run:
 	@echo "-- DONE --------------------"
 
 lint:
-	@$(VERILATOR) $(VERILATOR_FLAGS) $(VERILATOR_INPUT) --lint-only -I../rtl -I../RS5/rtl -I../RS5/rtl/aes -I../RS5/rtl/vector -I../RS5/RingBuffer/rtl -I../CacheControllers/rtl --timing
+	@$(VERILATOR) $(VERILATOR_FLAGS) $(VERILATOR_INPUT) --lint-only -I../rtl -I../RS5/rtl -I../RS5/rtl/aes -I../RS5/rtl/vector -I../RS5/RingBuffer/rtl -I../CacheControllers/rtl -I../Hermes/rtl --timing
 
 clean:
 	@echo

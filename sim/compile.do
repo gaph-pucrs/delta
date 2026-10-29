@@ -1,4 +1,5 @@
 vlog ../RS5/RingBuffer/rtl/RingBuffer.sv
+vlog ../Hermes/rtl/*.sv
 vlog ../CacheControllers/rtl/DMCtrl.sv
 vlog ../RS5/rtl/aes/*.sv
 vlog ../RS5/rtl/vector/*.sv

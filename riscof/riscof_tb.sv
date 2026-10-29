@@ -14,7 +14,7 @@
  * \detailed
  * Testbench for RS5 simulation.de
  */
-
+`include "HermesPkg.sv"
 `include "RS5_pkg.sv"
 `include "DMPkg.sv"
 
@@ -23,6 +23,7 @@
 //////////////////////////////////////////////////////////////////////////////
 
 module riscof_tb
+    import HermesPkg::*;
     import RS5_pkg::*;
     import DMPkg::*;
 #(
@@ -85,77 +86,34 @@ module riscof_tb
 
 
 //////////////////////////////////////////////////////////////////////////////
-// PE (RS5 + ICACHE CTRL + DCACHE CTRL + CNI + RTC + PLIC)
+// NoC
 //////////////////////////////////////////////////////////////////////////////
 
-    // PE -> MNI
-    logic                    cni_tx;
-    logic                    cni_eop;
-    logic [31:0]             cni_data_o;
-    logic                    mni_cr;
-    // MNI -> PE
-    logic                    cni_rx;
-    logic                    cni_eop_i;
-    logic [31:0]             cni_data_i;
-    logic                    cni_cr_o;
+    localparam logic [15:0]  PE_ADDRESS = 16'h0000;    // {X, Y} = (0,0)
+    localparam logic [15:0]  ME_ADDRESS = 16'h0202;    // {X, Y} = (2,2)
 
-    PE #(
+    DeltaMC #(
+        .N_PE_X        (3            ),
+        .N_PE_Y        (3            ),
+        .PE_ADDRESS    (PE_ADDRESS   ),
+        .ME_ADDRESS    (ME_ADDRESS   ),
 
-        .BUS_WIDTH       (BUS_WIDTH      ),
-        .MEM_ADDR_BITS   (MEM_ADDR_BITS  ),
-        .ICACHE_WIDTH    (CACHE_WIDTH    ),
-        .ICACHE_OFF_W    (CACHE_OFF_W    ),
-        .IWRITE_MODE     (IWRITE_MODE    ),
-        .DCACHE_WIDTH    (CACHE_WIDTH    ),
-        .DCACHE_OFF_W    (CACHE_OFF_W    ),
-        .DWRITE_MODE     (DWRITE_MODE    ),
+        .BUS_WIDTH     (BUS_WIDTH    ),
+        .MEM_ADDR_BITS (MEM_ADDR_BITS),
+        .ICACHE_WIDTH  (CACHE_WIDTH ),
+        .ICACHE_OFF_W  (CACHE_OFF_W ),
+        .IWRITE_MODE   (IWRITE_MODE  ),
+        .DCACHE_WIDTH  (CACHE_WIDTH ),
+        .DCACHE_OFF_W  (CACHE_OFF_W ),
+        .DWRITE_MODE   (DWRITE_MODE  ),
+        .FLIT_SIZE     (FLIT_SIZE    ),
+        .BLOCK_SIZE    (BLOCK_SIZE   ),
 
-        .FLIT_SIZE       (FLIT_SIZE      ),
-        .BLOCK_SIZE      (BLOCK_SIZE     )
-    ) pe (
-        .clk             (clk                 ),
-        .reset_n         (reset_n             ),
-
-        // PE -> MNI
-        .tx_o            (cni_tx              ),
-        .eop_o           (cni_eop             ),
-        .data_o          (cni_data_o          ),
-        .credit_i        (mni_cr              ),
-
-        // MNI -> PE
-        .rx_i            (cni_rx              ),
-        .eop_i           (cni_eop_i           ),
-        .data_i          (cni_data_i          ),
-        .credit_o        (cni_cr_o            )
-    );
-
-//////////////////////////////////////////////////////////////////////////////
-// ME (MNI + MAIN MEMORY)
-//////////////////////////////////////////////////////////////////////////////
-
-ME #(
-        .MEM_ADDR_BITS   (MEM_ADDR_BITS  ),
-        .FLIT_SIZE       (FLIT_SIZE      ),
-        .BLOCK_SIZE      (BLOCK_SIZE     ),
-
-        .MEM_WIDTH       (MEM_WIDTH      ),
-        .BIN_FILE        (BIN_FILE       ),
-        .BUS_WIDTH       (BUS_WIDTH      )
-) me (
-        .clk             (clk                 ),
-        .reset_n         (reset_n             ),
-
-        // PE -> MNI
-        .me_tx_o         (cni_rx              ),
-        .me_eop_o        (cni_eop_i           ),
-        .me_data_o       (cni_data_i          ),
-        .me_cr_i         (cni_cr_o            ),
-
-        // MNI -> PE
-        .me_rx_i         (cni_tx              ),
-        .me_eop_i        (cni_eop             ),
-        .me_data_i       (cni_data_o          ),
-        .me_cr_o         (mni_cr              )
+        .MEM_WIDTH     (MEM_WIDTH    ),
+        .BIN_FILE      (BIN_FILE     )
+    ) noc (
+        .clk_i         (clk          ),
+        .rst_ni        (reset_n      )
     );
 
 //////////////////////////////////////////////////////////////////////////////
@@ -165,7 +123,7 @@ ME #(
     int fd;
 
     always_ff @(posedge clk) begin
-        if (pe.mem_address == TOHOST_ADDR && pe.mem_write_enable != '0)
+        if (noc.pe.mem_address == TOHOST_ADDR && noc.pe.mem_write_enable != '0)
             $finish();
     end
 
@@ -188,12 +146,12 @@ ME #(
             tg = ma[MEM_ADDR_BITS-1 -: MEM_ADDR_BITS-CACHE_WIDTH];
             ix = ma[CACHE_WIDTH-1 -: CACHE_WIDTH-CACHE_OFF_W];
             cb = ma[CACHE_WIDTH-1:0];
-            if (pe.dcache_ctrl.entries[ix].valid && pe.dcache_ctrl.entries[ix].tag == tg)
-                return {pe.dcache_sram.RAM[cb+3], pe.dcache_sram.RAM[cb+2],
-                        pe.dcache_sram.RAM[cb+1], pe.dcache_sram.RAM[cb+0]};
+            if (noc.pe.dcache_ctrl.entries[ix].valid && noc.pe.dcache_ctrl.entries[ix].tag == tg)
+                return {noc.pe.dcache_sram.RAM[cb+3], noc.pe.dcache_sram.RAM[cb+2],
+                        noc.pe.dcache_sram.RAM[cb+1], noc.pe.dcache_sram.RAM[cb+0]};
             else 
-                return {me.RAM_MEM.RAM[ma+3], me.RAM_MEM.RAM[ma+2],
-                        me.RAM_MEM.RAM[ma+1], me.RAM_MEM.RAM[ma+0]};
+                return {noc.me.RAM_MEM.RAM[ma+3], noc.me.RAM_MEM.RAM[ma+2],
+                        noc.me.RAM_MEM.RAM[ma+1], noc.me.RAM_MEM.RAM[ma+0]};
         endfunction
     end
 

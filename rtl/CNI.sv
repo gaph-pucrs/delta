@@ -20,7 +20,11 @@ module CNI #(
     parameter int unsigned WRITE_REQUEST_NUMBER = 16,   // A LINHA INTEIRA DA CACHE
 
     parameter int unsigned READ_PAYLOAD  = 2,                 // ORIGIN COORDENATES + ADDR
-    parameter int unsigned WRITE_PAYLOAD = BLOCK_WORDS + 3    // ORIGIN COORDENATES + ADDR + WE + BLOCK_WORDS DADOS
+    parameter int unsigned WRITE_PAYLOAD = BLOCK_WORDS + 3,   // ORIGIN COORDENATES + ADDR + WE + BLOCK_WORDS DADOS
+
+    // NoC
+    parameter logic [15:0] ADDRESS        = 16'h0000,          // COORDENADAS DESTE PE
+    parameter logic [15:0] TARGET_ADDRESS = 16'h0000           // COORDENADAS DO ME
 )
 (
     input  logic                         clk,
@@ -194,12 +198,12 @@ module CNI #(
     assign hservice = (state == CNI_SEND_READ_REQUEST)  ? 8'(READ_REQUEST_NUMBER)
                     : (state == CNI_SEND_WRITE_REQUEST) ? 8'(WRITE_REQUEST_NUMBER)
                     :                                     '0;
-    assign hx       = 8'b0;     
-    assign hy       = 8'b0;
+    assign hx       = TARGET_ADDRESS[15:8];
+    assign hy       = TARGET_ADDRESS[7:0];
     assign header = {hflag,hservice,hx,hy};
 
-    assign hx_origin = 8'b0;
-    assign hy_origin = 8'b0;
+    assign hx_origin = ADDRESS[15:8];
+    assign hy_origin = ADDRESS[7:0];
     assign origin_position = {16'b0,hx_origin,hy_origin};
 
     // PALAVRA DO EVICT DISPONIVEL NO BARRAMENTO: O CONTROLADOR DE CACHE ESTA COM ce E we ATIVOS.

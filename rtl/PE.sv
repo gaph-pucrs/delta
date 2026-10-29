@@ -32,7 +32,13 @@ module PE
     // CNI
     //--------------------------------------------------------------------------
     parameter int           FLIT_SIZE        = 32,
-    parameter int           BLOCK_SIZE       = 16
+    parameter int           BLOCK_SIZE       = 16,
+
+    //--------------------------------------------------------------------------
+    // NoC
+    //--------------------------------------------------------------------------
+    parameter logic [15:0]  ADDRESS          = 16'h0000,    // COORDENADAS DESTE PE
+    parameter logic [15:0]  ME_ADDRESS       = 16'h0000     // COORDENADAS DO ME
 )
 (
     
@@ -390,7 +396,9 @@ module PE
         .ADDR_WIDTH  (MEM_ADDR_BITS      ),
         .FLIT_SIZE   (FLIT_SIZE          ),
         .FLIT_NUMBER (BLOCK_SIZE         ),
-        .BLOCK_WORDS (BLOCK_SIZE         )
+        .BLOCK_WORDS (BLOCK_SIZE         ),
+        .ADDRESS     (ADDRESS            ),
+        .TARGET_ADDRESS(ME_ADDRESS       )
     ) cni (
         .clk         (clk                ),
         .rst_n       (reset_n            ),
