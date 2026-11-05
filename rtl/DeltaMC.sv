@@ -44,6 +44,7 @@ module DeltaMC
     // ME
     //--------------------------------------------------------------------------
     parameter int           MEM_WIDTH     = 65536,
+    parameter int           PAGE_BITS     = 15,
     parameter string        BIN_FILE      = "../app/riscv-tests/test.bin"
 )
 (
@@ -94,7 +95,8 @@ module DeltaMC
         .FLIT_SIZE    (FLIT_SIZE    ),
         .BLOCK_SIZE   (BLOCK_SIZE   ),
         .ADDRESS      (PE_ADDRESS   ),      
-        .ME_ADDRESS   (ME_ADDRESS   )      
+        .ME_ADDRESS   (ME_ADDRESS   ),
+        .N_X          (N_PE_X       )
     ) pe (
         .clk          (clk_i        ),
         .reset_n      (rst_ni       ),
@@ -133,6 +135,7 @@ module DeltaMC
         .MEM_ADDR_BITS(MEM_ADDR_BITS),
         .FLIT_SIZE    (FLIT_SIZE    ),
         .BLOCK_SIZE   (BLOCK_SIZE   ),
+        .PAGE_BITS    (PAGE_BITS    ),
         .MEM_WIDTH    (MEM_WIDTH    ),
         .BIN_FILE     (BIN_FILE     ),
         .BUS_WIDTH    (BUS_WIDTH    )

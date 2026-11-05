@@ -18,6 +18,7 @@ module ME
     parameter int unsigned MEM_ADDR_BITS  = 28,
     parameter int unsigned FLIT_SIZE      = 32,
     parameter int unsigned BLOCK_SIZE     = 16,   // TAMANHO DO BLOCO DA CACHE
+    parameter int unsigned PAGE_BITS      = 15,
 
     // RAM
     parameter int    MEM_WIDTH  = 65536,
@@ -65,7 +66,8 @@ module ME
        MNI #(
             .ADDR_WIDTH  (MEM_ADDR_BITS),
             .FLIT_SIZE   (FLIT_SIZE ),
-            .BLOCK_WORDS (BLOCK_SIZE )
+            .BLOCK_WORDS (BLOCK_SIZE ),
+            .PAGE_BITS   (PAGE_BITS  )
        ) mni (
             .clk             (clk                ),
             .rst_n           (reset_n            ),

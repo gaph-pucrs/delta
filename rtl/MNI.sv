@@ -11,7 +11,8 @@
 module MNI #(
     parameter int unsigned ADDR_WIDTH  = 20,
     parameter int unsigned FLIT_SIZE   = 32,
-    parameter int unsigned BLOCK_WORDS = 16   // TAMANHO DO BLOCO DA CACHE
+    parameter int unsigned BLOCK_WORDS = 16,  // TAMANHO DO BLOCO DA CACHE
+    parameter int unsigned PAGE_BITS   = 15
 )
 (
     input  logic                         clk,
@@ -65,14 +66,18 @@ module MNI #(
     logic [(CNT_WIDTH - 1):0]      data_cnt;                              // QUAL PALAVRA ESTOU ARMAZENANDO
     logic [MEM_LATENCY:0]          mem_rd_v;                              // VARIAVEL DE CONTROLE
 
+    /* verilator lint_off UNUSEDSIGNAL */
     logic [(ADDR_WIDTH - 1):0]     base_addr_r;                          // ENDERECO BASE DO BLOCO DA ESCRITA/LEITURA
+    /* verilator lint_on UNUSEDSIGNAL */
     logic [3:0]                    we_r;                                 // SALVA WRITE ENABLE DO CICLO ANTERIOR PARA NAO PERDE-LO
     logic [(CNT_WIDTH - 1):0]      wr_cnt;                               // QUAL PALAVRA RECEBIDA DA CNI ESTOU ESCREVENDO EM MEMORIA
 
     logic [31:0]                      header;
     logic [7:0]                       hflag;                                            // INDICA A REQUISIÇÃO A SER REALIZADA
     logic [7:0]                    hservice;                                            // INDICA A QUANTIDADE DE PALAVRAS A SEREM REQUSITADAS
-    logic [15:0]                    htarget;          
+    logic [15:0]                    htarget;
+
+    logic [15:0]                    seq_r;                                              // SEQ DO PE QUE REQUISITOU, RECEBIDO NO FLIT DE ORIGEM
 
     //--------------------------------------------------------------------------
     // RINGBUFFER MODULE INSTANCIATION - RECEPTION FROM CNI
@@ -208,20 +213,21 @@ module MNI #(
     end
 
     // "DECODIFICAÇÃO" DO PAYLOAD RECEBIDO DA CNI
-    //   READ  : HEADER + ORIGIN COORDENATES + ADDR
-    //   WRITE : HEADER + ORIGIN COORDENATES + ADDR + WE + N DADOS
+    //   READ  : HEADER + ORIGIN ({SEQ, X, Y}) + ADDR
+    //   WRITE : HEADER + ORIGIN ({SEQ, X, Y}) + ADDR + WE + N DADOS
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             base_addr_r <= '0;
             we_r        <= '0;
             htarget     <= '0;
+            seq_r       <= '0;
         end
         else if (rx_rb) begin
             case (state)
                 MNI_ADDR_CAPTURE: base_addr_r <= data_rb[(ADDR_WIDTH - 1):0];
-                MNI_READ_ORIGIN:  htarget     <= data_rb[15:0];
+                MNI_READ_ORIGIN:  {seq_r, htarget} <= data_rb;
                 MNI_WR_ADDR:      base_addr_r <= data_rb[(ADDR_WIDTH - 1):0];
-                MNI_WR_ORIGIN:    htarget     <= data_rb[15:0];
+                MNI_WR_ORIGIN:    {seq_r, htarget} <= data_rb;
                 MNI_WR_WE:        we_r        <= data_rb[3:0];
                 default: ;
             endcase
@@ -242,11 +248,11 @@ module MNI #(
     // INTERFACE COM A RAM - READ_MEM OU WRITE_MEM
     //--------------------------------------------------------------------------
 
-    
     assign mni_mem_ce_o   = (state == MNI_READ_MEM) || (state == MNI_WRITE_MEM && rx_rb);
     assign mni_mem_we_o   = (state == MNI_WRITE_MEM && rx_rb) ? we_r : 4'h0;
     assign mni_mem_data_o = data_rb;
-    assign mni_mem_addr_o = {{(32 - ADDR_WIDTH){1'b0}}, base_addr_r}
+    assign mni_mem_addr_o = (32'(seq_r) << PAGE_BITS)
+                          + 32'(base_addr_r[(PAGE_BITS - 1):0])
                           + (32'((state == MNI_WRITE_MEM) ? 32'(wr_cnt) : 32'(addr_cnt)) << 2);
 
     //--------------------------------------------------------------------------

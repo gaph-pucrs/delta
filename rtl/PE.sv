@@ -38,7 +38,8 @@ module PE
     // NoC
     //--------------------------------------------------------------------------
     parameter logic [15:0]  ADDRESS          = 16'h0000,    // COORDENADAS DESTE PE
-    parameter logic [15:0]  ME_ADDRESS       = 16'h0000     // COORDENADAS DO ME
+    parameter logic [15:0]  ME_ADDRESS       = 16'h0000,    // COORDENADAS DO ME
+    parameter int unsigned  N_X              = 3            
 )
 (
     
@@ -398,7 +399,8 @@ module PE
         .FLIT_NUMBER (BLOCK_SIZE         ),
         .BLOCK_WORDS (BLOCK_SIZE         ),
         .ADDRESS     (ADDRESS            ),
-        .TARGET_ADDRESS(ME_ADDRESS       )
+        .TARGET_ADDRESS(ME_ADDRESS       ),
+        .N_X         (N_X                )
     ) cni (
         .clk         (clk                ),
         .rst_n       (reset_n            ),

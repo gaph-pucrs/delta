@@ -60,6 +60,7 @@ module riscof_tb
     localparam write_mode_t  IWRITE_MODE     = WRITE_THROUGH;
     localparam int CACHE_WIDTH    = 12;
     localparam int CACHE_OFF_W    = 6;
+    localparam int PAGE_BITS      = 21; // 21 pra rodar com 1 paginação de 2 MB
     localparam int MEM_ADDR_BITS  = $clog2(MEM_WIDTH);
     /* verilator lint_on UNUSEDPARAM */
 
@@ -110,6 +111,7 @@ module riscof_tb
         .BLOCK_SIZE    (BLOCK_SIZE   ),
 
         .MEM_WIDTH     (MEM_WIDTH    ),
+        .PAGE_BITS     (PAGE_BITS    ),
         .BIN_FILE      (BIN_FILE     )
     ) noc (
         .clk_i         (clk          ),

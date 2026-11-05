@@ -24,7 +24,8 @@ module CNI #(
 
     // NoC
     parameter logic [15:0] ADDRESS        = 16'h0000,          // COORDENADAS DESTE PE
-    parameter logic [15:0] TARGET_ADDRESS = 16'h0000           // COORDENADAS DO ME
+    parameter logic [15:0] TARGET_ADDRESS = 16'h0000,          // COORDENADAS DO ME
+    parameter int unsigned N_X            = 3                  
 )
 (
     input  logic                         clk,
@@ -68,6 +69,7 @@ module CNI #(
     localparam int unsigned MAX_PAYLOAD = (WRITE_PAYLOAD > READ_PAYLOAD) ? WRITE_PAYLOAD : READ_PAYLOAD;
     localparam int unsigned CNT_WIDTH   = $clog2(MAX_PAYLOAD + 1);                      
     localparam int unsigned IDX_WIDTH   = (FLIT_NUMBER > 1) ? $clog2(FLIT_NUMBER) : 1;  // INDICE DO VETOR DE FLITS
+    localparam logic [15:0] SEQ_ADDR    = 16'(32'(ADDRESS[15:8]) + 32'(ADDRESS[7:0]) * N_X); 
 
     // OS 3 PRIMEIROS FLITS DO WRITE SAO HEADER, ORIGIN, ADDR E WE: O DADO "k" VAI NO FLIT k+4
     localparam int unsigned WR_DATA_BASE = 4;
@@ -86,7 +88,7 @@ module CNI #(
     logic [7:0]                          hx;                                            // COORDENADAS X DO TARGET
     logic [7:0]                          hy;                                            // COORDENADAS Y DO TARGET
 
-    logic [31:0]            origin_position;                                            // FLIT QUE CONTEM AS COORDENDAS X & Y DE ORIGEM
+    logic [31:0]            origin_position;                                            // FLIT QUE CONTEM O SEQ E AS COORDENDAS X & Y DE ORIGEM
     logic [7:0]                   hx_origin;                                            // COORDENADAS X DA ORIGEM
     logic [7:0]                   hy_origin;                                            // COORDENADAS Y DA ORIGEM
 
@@ -204,7 +206,7 @@ module CNI #(
 
     assign hx_origin = ADDRESS[15:8];
     assign hy_origin = ADDRESS[7:0];
-    assign origin_position = {16'b0,hx_origin,hy_origin};
+    assign origin_position = {SEQ_ADDR,hx_origin,hy_origin};
 
     // PALAVRA DO EVICT DISPONIVEL NO BARRAMENTO: O CONTROLADOR DE CACHE ESTA COM ce E we ATIVOS.
     // ENQUANTO EU NAO ABAIXAR O mem_busy_o ELE SEGURA A MESMA PALAVRA

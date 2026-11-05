@@ -55,6 +55,7 @@ module testbench
 //////////////////////////////////////////////////////////////////////////////
     localparam int           BUS_WIDTH       = 32;
     localparam int           MEM_ADDR_BITS   = 28;
+    localparam int           PAGE_BITS       = 16;  // TAMANHO DA PAGINA 64 kB
     localparam string        BIN_FILE        = "../RS5/app/mem-test/mem-test.bin";
 
     localparam int           FLIT_SIZE       = 32;
@@ -116,6 +117,7 @@ module testbench
         .BLOCK_SIZE    (BLOCK_SIZE   ),
 
         .MEM_WIDTH     (MEM_WIDTH    ),
+        .PAGE_BITS     (PAGE_BITS    ),
         .BIN_FILE      (BIN_FILE     )
     ) noc (
         .clk_i         (clk          ),
