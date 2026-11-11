@@ -25,7 +25,7 @@ module CNI #(
     // NoC
     parameter logic [15:0] ADDRESS        = 16'h0000,          // COORDENADAS DESTE PE
     parameter logic [15:0] TARGET_ADDRESS = 16'h0000,          // COORDENADAS DO ME
-    parameter int unsigned N_X            = 3                  
+    parameter int unsigned N_X            = 3                  // Nº DE PE'S NO VETOR X (USADO NO CALCULO DO SEQ)
 )
 (
     input  logic                         clk,

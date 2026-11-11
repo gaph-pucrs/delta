@@ -2,9 +2,12 @@
 // IVAN PALADIN JUNIOR - 27/OCT/2026
 //------------------------------------------------------------------------------
 // -> DeltaMC: 3x3 Hermes NoC built following the structure of PhiversMC.sv
-//
-// -> ADDRESSES: {X[7:0], Y[7:0]}, PE being the coordenate 0,0 and
-//    ME being the coordenate 2,2.
+// -> ADDRESSES: PE's can populate the entire NOC(3x3), with the exception 
+//    of the coordenate 2,2 being the ME.
+// -> PE_ENABLE: one bit per position, indexed by SEQ = x + y * N_PE_X.
+//    1 = PE on the router's LOCAL port, 0 = bare Hermes router (LOCAL grounded).
+// -> MEMORY SEGMENTATION: the ME memory has one page of 2^PAGE_BITS (default being 
+//    16 = 64 kb) bytes per position, page = SEQ = x + y * N_PE_X. 
 //
 // * GAPH - Hardware Design Support Group
 // * PUCRS - Pontifical Catholic University of Rio Grande do Sul
@@ -23,8 +26,8 @@ module DeltaMC
     parameter int           N_PE_X        = 3,
     parameter int           N_PE_Y        = 3,
     parameter int           BUFFER_SIZE   = 8,          
-    parameter logic [15:0]  PE_ADDRESS    = 16'h0000,   
     parameter logic [15:0]  ME_ADDRESS    = 16'h0202,   
+    parameter logic [(N_PE_X * N_PE_Y - 1):0] PE_ENABLE = '1,
 
     //--------------------------------------------------------------------------
     // PE
@@ -44,17 +47,16 @@ module DeltaMC
     // ME
     //--------------------------------------------------------------------------
     parameter int           MEM_WIDTH     = 65536,
-    parameter int           PAGE_BITS     = 15,
-    parameter string        BIN_FILE      = "../app/riscv-tests/test.bin"
+    parameter int           PAGE_BITS     = 15,         
+    parameter int           N_APPS        = 3,
+    parameter string        APP_FILES [N_APPS] = '{default: "../app/riscv-tests/test.bin"}
 )
 (
     input  logic            clk_i,
     input  logic            rst_ni
 );
    
-    /* Target and Origin coordenates*/
-    localparam int PE_X = int'(PE_ADDRESS[15:8]);
-    localparam int PE_Y = int'(PE_ADDRESS[ 7:0]);
+    /* ME coordenates */
     localparam int ME_X = int'(ME_ADDRESS[15:8]);
     localparam int ME_Y = int'(ME_ADDRESS[ 7:0]);
 
@@ -68,54 +70,6 @@ module DeltaMC
     logic                     eop_tx    [(N_PE_X - 1):0][(N_PE_Y - 1):0][(HERMES_NPORT - 1):0];
     logic                     credit_tx [(N_PE_X - 1):0][(N_PE_Y - 1):0][(HERMES_NPORT - 1):0];
     logic [(FLIT_SIZE - 1):0] data_tx   [(N_PE_X - 1):0][(N_PE_Y - 1):0][(HERMES_NPORT - 1):0];
-
-////////////////////////////////////////////////////////////////////////////////
-// PE (RS5 + ICACHE CTRL + DCACHE CTRL + CNI + RTC + PLIC + $ MEMORIES)
-////////////////////////////////////////////////////////////////////////////////
-
-    logic                     pe_tx;
-    logic                     pe_eop_tx;
-    logic                     pe_credit_tx;
-    logic [(FLIT_SIZE - 1):0] pe_data_tx;
-
-    logic                     pe_rx;
-    logic                     pe_eop_rx;
-    logic                     pe_credit_rx;
-    logic [(FLIT_SIZE - 1):0] pe_data_rx;
-
-    PE #(
-        .BUS_WIDTH    (BUS_WIDTH    ),
-        .MEM_ADDR_BITS(MEM_ADDR_BITS),
-        .ICACHE_WIDTH (ICACHE_WIDTH ),
-        .ICACHE_OFF_W (ICACHE_OFF_W ),
-        .IWRITE_MODE  (IWRITE_MODE  ),
-        .DCACHE_WIDTH (DCACHE_WIDTH ),
-        .DCACHE_OFF_W (DCACHE_OFF_W ),
-        .DWRITE_MODE  (DWRITE_MODE  ),
-        .FLIT_SIZE    (FLIT_SIZE    ),
-        .BLOCK_SIZE   (BLOCK_SIZE   ),
-        .ADDRESS      (PE_ADDRESS   ),      
-        .ME_ADDRESS   (ME_ADDRESS   ),
-        .N_X          (N_PE_X       )
-    ) pe (
-        .clk          (clk_i        ),
-        .reset_n      (rst_ni       ),
-        // PE -> NoC
-        .tx_o         (pe_tx        ),
-        .eop_o        (pe_eop_tx    ),
-        .data_o       (pe_data_tx   ),
-        .credit_i     (pe_credit_tx ),
-        // NoC -> PE
-        .rx_i         (pe_rx        ),
-        .eop_i        (pe_eop_rx    ),
-        .data_i       (pe_data_rx   ),
-        .credit_o     (pe_credit_rx )
-    );
-
-    assign pe_rx        = tx       [PE_X][PE_Y][HERMES_LOCAL];
-    assign pe_eop_rx    = eop_tx   [PE_X][PE_Y][HERMES_LOCAL];
-    assign pe_credit_tx = credit_rx[PE_X][PE_Y][HERMES_LOCAL];
-    assign pe_data_rx   = data_tx  [PE_X][PE_Y][HERMES_LOCAL];
 
 ////////////////////////////////////////////////////////////////////////////////
 // ME (MNI + MAIN MEMORY)
@@ -137,8 +91,14 @@ module DeltaMC
         .BLOCK_SIZE   (BLOCK_SIZE   ),
         .PAGE_BITS    (PAGE_BITS    ),
         .MEM_WIDTH    (MEM_WIDTH    ),
-        .BIN_FILE     (BIN_FILE     ),
-        .BUS_WIDTH    (BUS_WIDTH    )
+        .BUS_WIDTH    (BUS_WIDTH    ),
+        .PAGED        (1'b1         ),      
+        .N_PE_X       (N_PE_X       ),
+        .N_PE_Y       (N_PE_Y       ),
+        .ADDRESS      (ME_ADDRESS   ),
+        .PE_ENABLE    (PE_ENABLE    ),
+        .N_APPS       (N_APPS       ),
+        .APP_FILES    (APP_FILES    )
     ) me (
         .clk          (clk_i        ),
         .reset_n      (rst_ni       ),
@@ -160,7 +120,8 @@ module DeltaMC
     assign me_data_rx   = data_tx  [ME_X][ME_Y][HERMES_LOCAL];
 
 ////////////////////////////////////////////////////////////////////////////////
-// Many-core generation: one Hermes router per position
+// Many-core generation: one Hermes router per position. On its LOCAL port:
+// the ME (at ME_ADDRESS), a PE (PE_ENABLE[seq] = 1) or nothing (grounded)
 ////////////////////////////////////////////////////////////////////////////////
 
     generate
@@ -185,6 +146,51 @@ module DeltaMC
                     .credit_i(credit_tx[x][y]),
                     .data_o  (data_tx  [x][y])
                 );
+                // GERAÇÃO DO ME
+                if (x == ME_X && y == ME_Y) begin : gen_me
+                    /* ME -> router LOCAL input (router LOCAL output -> ME, above) */
+                    assign rx       [x][y][HERMES_LOCAL] = me_tx;
+                    assign eop_rx   [x][y][HERMES_LOCAL] = me_eop_tx;
+                    assign credit_tx[x][y][HERMES_LOCAL] = me_credit_rx;
+                    assign data_rx  [x][y][HERMES_LOCAL] = me_data_tx;
+                end
+                else if (PE_ENABLE[x + y * N_PE_X]) begin : gen_pe
+                    PE #(
+                        .BUS_WIDTH    (BUS_WIDTH    ),
+                        .MEM_ADDR_BITS(MEM_ADDR_BITS),
+                        .ICACHE_WIDTH (ICACHE_WIDTH ),
+                        .ICACHE_OFF_W (ICACHE_OFF_W ),
+                        .IWRITE_MODE  (IWRITE_MODE  ),
+                        .DCACHE_WIDTH (DCACHE_WIDTH ),
+                        .DCACHE_OFF_W (DCACHE_OFF_W ),
+                        .DWRITE_MODE  (DWRITE_MODE  ),
+                        .FLIT_SIZE    (FLIT_SIZE    ),
+                        .BLOCK_SIZE   (BLOCK_SIZE   ),
+                        .ADDRESS      (address      ),      
+                        .ME_ADDRESS   (ME_ADDRESS   ),      
+                        .N_X          (N_PE_X       )       
+                    ) pe (
+                        .clk          (clk_i                        ),
+                        .reset_n      (rst_ni                       ),
+                        // PE -> router LOCAL input
+                        .tx_o         (rx       [x][y][HERMES_LOCAL]),
+                        .eop_o        (eop_rx   [x][y][HERMES_LOCAL]),
+                        .data_o       (data_rx  [x][y][HERMES_LOCAL]),
+                        .credit_i     (credit_rx[x][y][HERMES_LOCAL]),
+                        // router LOCAL output -> PE
+                        .rx_i         (tx       [x][y][HERMES_LOCAL]),
+                        .eop_i        (eop_tx   [x][y][HERMES_LOCAL]),
+                        .data_i       (data_tx  [x][y][HERMES_LOCAL]),
+                        .credit_o     (credit_tx[x][y][HERMES_LOCAL])
+                    );
+                end
+                else begin : gen_gnd
+                    /* No PE: the router only forwards packets */
+                    assign rx       [x][y][HERMES_LOCAL] = '0;     
+                    assign eop_rx   [x][y][HERMES_LOCAL] = '0;
+                    assign credit_tx[x][y][HERMES_LOCAL] = '1;     
+                    assign data_rx  [x][y][HERMES_LOCAL] = '0;
+                end
             end
         end
     endgenerate
@@ -228,7 +234,7 @@ module DeltaMC
     endgenerate
 
 ////////////////////////////////////////////////////////////////////////////////
-// NoC border grounding and LOCAL port connection
+// NoC border grounding
 ////////////////////////////////////////////////////////////////////////////////
 
     generate
@@ -265,24 +271,6 @@ module DeltaMC
                     assign data_rx  [x][y][HERMES_WEST]  = '0;
                 end
 
-                if (x == PE_X && y == PE_Y) begin : gen_local_pe
-                    assign rx       [x][y][HERMES_LOCAL] = pe_tx;
-                    assign eop_rx   [x][y][HERMES_LOCAL] = pe_eop_tx;
-                    assign credit_tx[x][y][HERMES_LOCAL] = pe_credit_rx;
-                    assign data_rx  [x][y][HERMES_LOCAL] = pe_data_tx;
-                end
-                else if (x == ME_X && y == ME_Y) begin : gen_local_me
-                    assign rx       [x][y][HERMES_LOCAL] = me_tx;
-                    assign eop_rx   [x][y][HERMES_LOCAL] = me_eop_tx;
-                    assign credit_tx[x][y][HERMES_LOCAL] = me_credit_rx;
-                    assign data_rx  [x][y][HERMES_LOCAL] = me_data_tx;
-                end
-                else begin : gen_local_gnd
-                    assign rx       [x][y][HERMES_LOCAL] = '0;     
-                    assign eop_rx   [x][y][HERMES_LOCAL] = '0;
-                    assign credit_tx[x][y][HERMES_LOCAL] = '1;     
-                    assign data_rx  [x][y][HERMES_LOCAL] = '0;
-                end
             end
         end
     endgenerate

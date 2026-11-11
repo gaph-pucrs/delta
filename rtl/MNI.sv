@@ -86,7 +86,8 @@ module MNI #(
     logic          tx_rb_ack;
     logic          rx_rb;
     logic [31:0]   data_rb;
-    logic          rx_rb_ack; 
+    logic          rx_rb_ack;
+    logic          tx_rb; 
 
     RingBuffer #(
         .DATA_SIZE   (FLIT_SIZE           ),
@@ -97,7 +98,7 @@ module MNI #(
         .rst_ni   (rst_n                  ),
         .buf_rst_i(1'b0                   ),
 
-        .rx_i     (mni_rx_i               ),
+        .rx_i     (tx_rb                  ), 
         .rx_ack_o (tx_rb_ack              ),
         .data_i   (mni_data_i             ),
 
@@ -112,6 +113,7 @@ module MNI #(
     /* verilator lint_on PINCONNECTEMPTY */
     );
 
+    assign tx_rb = mni_rx_i && mni_cr_o;
 
     //--------------------------------------------------------------------------
     // HEADER PACKAGE SPECIFICATION
