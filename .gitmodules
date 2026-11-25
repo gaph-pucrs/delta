@@ -7,3 +7,6 @@
 [submodule "Hermes"]
 	path = Hermes
 	url = https://github.com/gaph-pucrs/Hermes.git
+[submodule "DMNI"]
+	path = DMNI
+	url = https://github.com/gaph-pucrs/DMNI.git

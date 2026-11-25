@@ -100,7 +100,7 @@ module testbench
     // EX:
     //   8 PEs           : 9'b0_1111_1111
     //   1 PE em (0,0)   : 9'b0_0000_0001
-    localparam logic [(N_PE_X * N_PE_Y - 1):0] PE_ENABLE = 9'b0_0101_0001;
+    localparam logic [(N_PE_X * N_PE_Y - 1):0] PE_ENABLE = 9'b0_0000_0001;
 
     // DEBUG
     localparam int           ME_SEQ     = ME_X + ME_Y * N_PE_X;
@@ -109,14 +109,15 @@ module testbench
     localparam int           MEM_WIDTH  = 1 << MEM_ADDR_BITS;
 
     // DEFINIÇÃO DAS APLICAÇÕES A SEREM RODADAS
-    localparam int           N_APPS     = 3;
+    localparam int           N_APPS     = 1;
     localparam string        APP_FILES [N_APPS] = '{
-        "../RS5/app/coremark/coremark.bin",     
-        "../RS5/app/coremark/coremark.bin",    //    "../RS5/app/riscv-tests/test.bin",      
-        "../RS5/app/coremark/coremark.bin"    //    "../RS5/app/bolt-safe/bolt-safe.bin"    
+         "../RS5/app/dmni-tx/dmni-tx.bin"
+   //    "../RS5/app/coremark/coremark.bin"     
+   //    "../RS5/app/riscv-tests/test.bin",      
+   //    "../RS5/app/bolt-safe/bolt-safe.bin"    
     };
 //    localparam string        APP_NAMES [N_APPS] = '{"coremark", "riscv-tests", "bolt-safe"};
-      localparam string        APP_NAMES [N_APPS] = '{"coremark", "coremark", "coremark"};
+      localparam string        APP_NAMES [N_APPS] = '{"dmni-tx"};
 
     DeltaMC #(
         .N_PE_X        (N_PE_X       ),

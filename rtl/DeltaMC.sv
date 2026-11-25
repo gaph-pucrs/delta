@@ -155,6 +155,13 @@ module DeltaMC
                     assign data_rx  [x][y][HERMES_LOCAL] = me_data_tx;
                 end
                 else if (PE_ENABLE[x + y * N_PE_X]) begin : gen_pe
+                    /* verilator lint_off UNUSEDSIGNAL */
+                    logic                     dmni_tx;
+                    logic                     dmni_eop;
+                    logic [(FLIT_SIZE - 1):0] dmni_data;
+                    /* verilator lint_on UNUSEDSIGNAL */
+                    logic                     dmni_credit;
+
                     PE #(
                         .BUS_WIDTH    (BUS_WIDTH    ),
                         .MEM_ADDR_BITS(MEM_ADDR_BITS),
@@ -168,7 +175,8 @@ module DeltaMC
                         .BLOCK_SIZE   (BLOCK_SIZE   ),
                         .ADDRESS      (address      ),      
                         .ME_ADDRESS   (ME_ADDRESS   ),      
-                        .N_X          (N_PE_X       )       
+                        .N_X          (N_PE_X       ),
+                        .N_Y          (N_PE_Y       )
                     ) pe (
                         .clk          (clk_i                        ),
                         .reset_n      (rst_ni                       ),
@@ -181,8 +189,31 @@ module DeltaMC
                         .rx_i         (tx       [x][y][HERMES_LOCAL]),
                         .eop_i        (eop_tx   [x][y][HERMES_LOCAL]),
                         .data_i       (data_tx  [x][y][HERMES_LOCAL]),
-                        .credit_o     (credit_tx[x][y][HERMES_LOCAL])
+                        .credit_o     (credit_tx[x][y][HERMES_LOCAL]),
+
+                        .dmni_tx_o    (dmni_tx                      ),
+                        .dmni_eop_o   (dmni_eop                     ),
+                        .dmni_data_o  (dmni_data                    ),
+                        .dmni_credit_i(dmni_credit                  ),
+
+                        // RX NAO IMPLEMENTADO
+                        .dmni_rx_i    (1'b0                         ),
+                        .dmni_eop_i   (1'b0                         ),
+                        .dmni_data_i  ('0                           ),
+                        /* verilator lint_off PINCONNECTEMPTY */
+                        .dmni_credit_o(                             )
+                        /* verilator lint_on PINCONNECTEMPTY */
                     );
+                    // GAMBIARRA FUDIDA
+                    if (x == 0 && y == 0) begin : gen_dmni_tx_test
+                        assign rx     [x][y][HERMES_SOUTH] = dmni_tx;
+                        assign eop_rx [x][y][HERMES_SOUTH] = dmni_eop;
+                        assign data_rx[x][y][HERMES_SOUTH] = dmni_data;
+                        assign dmni_credit                 = credit_rx[x][y][HERMES_SOUTH];
+                    end
+                    else begin : gen_dmni_tx_off
+                        assign dmni_credit = 1'b1;
+                    end
                 end
                 else begin : gen_gnd
                     /* No PE: the router only forwards packets */
@@ -250,10 +281,12 @@ module DeltaMC
                 end
 
                 if (y == 0) begin : gen_gnd_south
-                    assign rx       [x][y][HERMES_SOUTH] = '0;
-                    assign eop_rx   [x][y][HERMES_SOUTH] = '0;
                     assign credit_tx[x][y][HERMES_SOUTH] = '1;
-                    assign data_rx  [x][y][HERMES_SOUTH] = '0;
+                    if (!(x == 0 && PE_ENABLE[0] && !(ME_X == 0 && ME_Y == 0))) begin : gen_gnd_south_in
+                        assign rx       [x][y][HERMES_SOUTH] = '0;
+                        assign eop_rx   [x][y][HERMES_SOUTH] = '0;
+                        assign data_rx  [x][y][HERMES_SOUTH] = '0;
+                    end
                 end
 
                 /* East and west ground */

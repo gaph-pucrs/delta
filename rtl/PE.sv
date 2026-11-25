@@ -11,12 +11,14 @@
 
 `include "RS5_pkg.sv"
 `include "DMPkg.sv"
+`include "DMNIPkg.sv"
 
 module PE
     import RS5_pkg::*;
     import DMPkg::*;
 #(
     parameter int           BUS_WIDTH        = 32,
+    parameter int           SPM_ADDR_BITS    = 11,  // SCRATCHPAD SIZE = 2kB 
     //--------------------------------------------------------------------------
     // CACHES
     //--------------------------------------------------------------------------
@@ -39,7 +41,8 @@ module PE
     //--------------------------------------------------------------------------
     parameter logic [15:0]  ADDRESS          = 16'h0000,    // COORDENADAS DESTE PE
     parameter logic [15:0]  ME_ADDRESS       = 16'h0000,    // COORDENADAS DO ME
-    parameter int unsigned  N_X              = 3            
+    parameter int unsigned  N_X              = 3,
+    parameter int unsigned  N_Y              = 3
 )
 (
     
@@ -60,7 +63,23 @@ module PE
     input  logic                    rx_i,
     input  logic                    eop_i,
     input  logic [31:0]             data_i,
-    output logic                    credit_o
+    output logic                    credit_o,
+
+    //--------------------------------------------------------------------------
+    // PE (DMNI) ------> NoC
+    //--------------------------------------------------------------------------
+    output logic                    dmni_tx_o,
+    output logic                    dmni_eop_o,
+    output logic [31:0]             dmni_data_o,
+    input  logic                    dmni_credit_i,
+
+    //--------------------------------------------------------------------------
+    // PE (DMNI) <------ NoC
+    //--------------------------------------------------------------------------
+    input  logic                    dmni_rx_i,
+    input  logic                    dmni_eop_i,
+    input  logic [31:0]             dmni_data_i,
+    output logic                    dmni_credit_o
 );
 
 //////////////////////////////////////////////////////////////////////////////
@@ -79,6 +98,13 @@ module PE
     logic                   enable_tb, enable_tb_r;
     logic                   enable_imem;
     logic                   enable_ram;
+
+    logic                   enable_scpad,enable_scpad_r;
+    logic [31:0]            data_spm;
+
+    logic                   enable_dmni, enable_dmni_r;
+    logic [31:0]            data_dmni;
+    logic                   dmni_irq;
 
     logic                   enable_rtc, enable_plic;
     logic                   enable_rtc_r, enable_plic_r;
@@ -107,21 +133,27 @@ module PE
 
     assign enable_ram    = mem_operation_enable &&  ((mem_address[31:28] == 4'b0000) || (mem_address[31:28] == 4'b0001));
     assign enable_rtc    = mem_operation_enable &&  (mem_address[31:28] == 4'b0010);
+    assign enable_scpad  = mem_operation_enable &&  (mem_address[31:28] == 4'b0011);
+    assign enable_dmni   = mem_operation_enable &&  (mem_address[31:28] == 4'b0101);
     assign enable_plic   = mem_operation_enable &&  (mem_address[31:28] == 4'b0100);
     assign enable_tb     = mem_operation_enable &&  (mem_address[31:28] == 4'b1000);
 
     always_ff @(posedge clk) begin
-        enable_rtc_r  <= enable_rtc;
-        enable_plic_r <= enable_plic;
-        enable_tb_r   <= enable_tb;
+        enable_rtc_r   <= enable_rtc;
+        enable_plic_r  <= enable_plic;
+        enable_tb_r    <= enable_tb;
+        enable_scpad_r <= enable_scpad;
+        enable_dmni_r  <= enable_dmni;
     end
 
 
     always_comb begin
-        unique case ({enable_tb_r, enable_plic_r, enable_rtc_r})
-            3'b100:  mem_data_read = data_tb;
-            3'b010:  mem_data_read = {{(BUS_WIDTH-32){1'b0}}, data_plic};
-            3'b001:  mem_data_read = {{(BUS_WIDTH-32){1'b0}}, data_rtc[31:0]};
+        unique case ({enable_dmni_r, enable_scpad_r, enable_tb_r, enable_plic_r, enable_rtc_r})
+            5'b10000: mem_data_read = {{(BUS_WIDTH-32){1'b0}}, data_dmni};
+            5'b01000: mem_data_read = {{(BUS_WIDTH-32){1'b0}}, data_spm};
+            5'b00100: mem_data_read = data_tb;
+            5'b00010: mem_data_read = {{(BUS_WIDTH-32){1'b0}}, data_plic};
+            5'b00001: mem_data_read = {{(BUS_WIDTH-32){1'b0}}, data_rtc[31:0]};
             default: mem_data_read = dmem_dataR;
         endcase
     end
@@ -174,7 +206,7 @@ module PE
         .data_o  (data_plic),
         .iack_i  (interrupt_ack),
         .irq_o   (mei),
-        .irq_i   ('0),
+        .irq_i   (dmni_irq),                     // DMNI INTERRUPT
         /* verilator lint_off PINCONNECTEMPTY */
         .iack_o  (/* Unconnected */  )
         /* verilator lint_on PINCONNECTEMPTY */
@@ -421,6 +453,94 @@ module PE
         .cni_cr_o    (credit_o           ),
         .cni_eop_i   (eop_i              ),
         .cni_data_i  (data_i             )
+    );
+
+
+
+//////////////////////////////////////////////////////////////////////////////
+// SCRATCHPAD MEMORY - PORT A: CONTROLLER MUX | PORT B: DMNI
+//////////////////////////////////////////////////////////////////////////////
+
+    logic                   dmni_mem_en;
+    logic [3:0]             dmni_mem_we;
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [31:0]            dmni_mem_addr;
+    /* verilator lint_on UNUSEDSIGNAL */
+    logic [31:0]            dmni_mem_data_r, dmni_mem_data_w;
+
+    RAM_mem #(
+        .MEM_WIDTH(1 << SPM_ADDR_BITS),
+        .BIN_FILE("/dev/null")
+    ) scratchpad (
+        .clk    (clk),
+        .enA_i  (enable_scpad),
+        .weA_i  (mem_write_enable),
+        .addrA_i(mem_address[SPM_ADDR_BITS-1:0]),
+        .dataA_i(mem_data_write),
+        .dataA_o(data_spm),
+        // PORT B: DMNI
+        .enB_i  (dmni_mem_en),
+        .weB_i  (dmni_mem_we),
+        .addrB_i(dmni_mem_addr[SPM_ADDR_BITS-1:0]),
+        .dataB_i(dmni_mem_data_w),
+        .dataB_o(dmni_mem_data_r)
+    );
+
+//////////////////////////////////////////////////////////////////////////////
+// DMNI
+//////////////////////////////////////////////////////////////////////////////
+
+    DMNI #(
+        .HERMES_FLIT_SIZE  (FLIT_SIZE),
+        .HERMES_BUFFER_SIZE(16       ),
+        .BR_BUFFER_SIZE    (4        ),
+        .N_PE_X            (N_X      ),
+        .N_PE_Y            (N_Y      ),
+        .TASKS_PER_PE      (1        ),
+        .ADDRESS           (ADDRESS  )
+    ) dmni (
+        .clk_i               (clk                 ),
+        .rst_ni              (reset_n             ),
+        .tick_counter_i      (mtime[31:0]         ),
+
+        // CPU INTERFACE (CONTROLLER MUX)
+        .irq_o               (dmni_irq            ),
+        .cfg_en_i            (enable_dmni         ),
+        .cfg_we_i            (mem_write_enable    ),
+        .cfg_addr_i          (mem_address[7:0]    ),
+        .cfg_data_i          (mem_data_write      ),
+        .cfg_data_o          (data_dmni           ),
+        /* verilator lint_off PINCONNECTEMPTY */
+        .release_peripheral_o(/* Unconnected */   ),
+        /* verilator lint_on PINCONNECTEMPTY */
+
+        // MEMORY INTERFACE (SCRATCHPAD PORT B)
+        .mem_en_o            (dmni_mem_en         ),
+        .mem_we_o            (dmni_mem_we         ),
+        .mem_addr_o          (dmni_mem_addr       ),
+        .mem_data_i          (dmni_mem_data_r     ),
+        .mem_data_o          (dmni_mem_data_w     ),
+
+        // NoC
+        .noc_rx_i            (dmni_rx_i           ),
+        .noc_eop_i           (dmni_eop_i          ),
+        .noc_credit_o        (dmni_credit_o       ),
+        .noc_data_i          (dmni_data_i         ),
+        .noc_tx_o            (dmni_tx_o           ),
+        .noc_eop_o           (dmni_eop_o          ),
+        .noc_credit_i        (dmni_credit_i       ),
+        .noc_data_o          (dmni_data_o         ),
+
+        // BRLITE: NOT USED
+        .br_req_i            (1'b0                ),
+        .br_data_i           ('0                  ),
+        .br_local_busy_i     (1'b0                ),
+        .br_ack_i            (1'b0                ),
+        /* verilator lint_off PINCONNECTEMPTY */
+        .br_ack_o            (/* Unconnected */   ),
+        .br_req_o            (/* Unconnected */   ),
+        .br_data_o           (/* Unconnected */   )
+        /* verilator lint_on PINCONNECTEMPTY */
     );
 
 endmodule
